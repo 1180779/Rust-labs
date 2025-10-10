@@ -4,8 +4,6 @@
     when there is no underlying data that needs to be moved.
     Copy can be derived if we remove the unit field.
 */
-use std::ops::{Add, AddAssign};
-
 #[derive(Debug, Clone, Default)]
 struct NumberWithUnit {
     unit: String,
@@ -63,13 +61,13 @@ impl NumberWithUnit {
     }
 
     fn mul_in_place(&mut self, other: &Self) {
-        self.unit.push_str("*");
+        self.unit.push('*');
         self.unit.push_str(other.unit.as_str());
         self.value *= other.value;
     }
 
     fn div_in_place(&mut self, other: &Self) {
-        self.unit.push_str("/");
+        self.unit.push('/');
         self.unit.push_str(other.unit.as_str());
         self.value /= other.value;
     }
@@ -99,6 +97,31 @@ impl NumberWithUnit {
     }
 }
 
+struct DoubleString {
+    str_1: String,
+    str_2: String,
+}
+
+impl DoubleString {
+    fn from_strs(str_1: &str, str_2: &str) -> Self {
+        Self {
+            str_1: String::from(str_1),
+            str_2: String::from(str_2),
+        }
+    }
+
+    fn from_strings(str_1: &String, str_2: &String) -> Self {
+        Self {
+            str_1: str_1.clone(),
+            str_2: str_2.clone(),
+        }
+    }
+
+    fn show(&self) {
+        println!("({}, {})", self.str_1, self.str_2);
+    }
+}
+
 fn main() {
     /* use constructors and print values */
     println!("Constructors");
@@ -122,9 +145,9 @@ fn main() {
     let div_vel = vel1.div(vel2);
     println!("{:?}", div_vel);
 
-    let enegry1 = NumberWithUnit::with_unit(0.8, String::from("kW"));
+    let energy1 = NumberWithUnit::with_unit(0.8, String::from("kW"));
     let energy2 = NumberWithUnit::with_unit(8.0, String::from("h"));
-    let mul_energy = enegry1.mul(energy2);
+    let mul_energy = energy1.mul(energy2);
     println!("{:?}", mul_energy);
 
     /* use functions in place */
@@ -172,5 +195,16 @@ fn main() {
     );
     println!("empty_vec_mul = {:?}", empty_vec_mul);
 
+    /* DoubleString */
+    let string = String::from("Hello");
+    let str_slice = " World!";
 
+    /* str_slice does not need & because the str is TODO: */
+    let double_str1 = DoubleString::from_strs(&string, str_slice);
+    // this will not work. The str_slice is not a String, it does not own the value
+    // let double_str2 = DoubleString::from_strings(&string, str_slice);
+    let double_str2 = DoubleString::from_strings(&string, &str_slice.to_owned());
+
+    double_str1.show();
+    double_str2.show();
 }
