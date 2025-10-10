@@ -73,6 +73,22 @@ impl NumberWithUnit {
         self.unit.push_str(other.unit.as_str());
         self.value /= other.value;
     }
+
+    fn mul_vals(slice: &[NumberWithUnit]) -> NumberWithUnit {
+        let mut result = NumberWithUnit::unitless(0.0);
+        for item in slice {
+            result.mul_in_place(item);
+        }
+        result
+    }
+
+    fn mul_vals_vec(vec: Vec<NumberWithUnit>) -> NumberWithUnit {
+        let mut result = NumberWithUnit::unitless(0.0);
+        for item in vec {
+            result.mul_in_place(&item);
+        }
+        result
+    }
 }
 
 fn main() {
@@ -84,7 +100,6 @@ fn main() {
     println!("{:?}", nwu1);
     println!("{:?}", nwu2);
     println!("{:?}", nwu3);
-
 
     /* use the functions and print values */
     let dist1 = NumberWithUnit::with_unit(530.0, String::from("m"));
@@ -105,5 +120,29 @@ fn main() {
     /* use functions in place */
     /* TODO: implement */
 
+    /* multiply values in a slice */
+    let nwu_arr = [
+        NumberWithUnit::with_unit(1.0, String::from("k")),
+        NumberWithUnit::with_unit(2.0, String::from("m")),
+        NumberWithUnit::with_unit(3.0, String::from("1/s")),
+        NumberWithUnit::with_unit(4.0, String::from("1/s")),
+    ];
 
+    let newton1 = NumberWithUnit::mul_vals(&nwu_arr);
+    let newton2 = NumberWithUnit::mul_vals(&nwu_arr);
+    let newton3 = NumberWithUnit::mul_vals(&nwu_arr);
+    println!("newton1 = {:?}, newton2 = {:?}, newton3 = {:?}", newton1, newton2, newton3);
+
+    /* multiply values in a vector */
+    let nwu_vec = vec![
+        NumberWithUnit::with_unit(1.0, String::from("k")),
+        NumberWithUnit::with_unit(2.0, String::from("m")),
+        NumberWithUnit::with_unit(3.0, String::from("1/s")),
+        NumberWithUnit::with_unit(4.0, String::from("1/s")),
+    ];
+
+    let newton1_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
+    let newton2_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
+    let newton3_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
+    println!("newton1_vec = {:?}, newton2_vec = {:?}, newton3_vec = {:?}", newton1_vec, newton2_vec, newton3_vec);
 }
