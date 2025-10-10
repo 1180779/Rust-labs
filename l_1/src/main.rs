@@ -14,15 +14,15 @@ fn main() {
         io::stdin()
             .read_line(&mut input)
             .expect("Failed to read line");
-        let number: u64 = match input.trim().parse::<u64>() {
+        let x: u64 = match input.trim().parse::<u64>() {
             Ok(num) => num,
             Err(_) => break true,
         };
-        if number == 0 {
+        if x == 0 {
             break false;
         }
 
-        let x = number + rand::rng().random_range(0..=5);
+        let x = x + rand::rng().random_range(0..=5);
         println!("x = {}", x);
 
         let arr = exponents(x);
