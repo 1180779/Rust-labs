@@ -141,8 +141,11 @@ fn main() {
         NumberWithUnit::with_unit(4.0, String::from("1/s")),
     ];
 
-    let newton1_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
-    let newton2_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
-    let newton3_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
+    let newton1_vec = NumberWithUnit::mul_vals_vec(nwu_vec.clone());
+    let newton2_vec = NumberWithUnit::mul_vals_vec(nwu_vec.clone());
+    let newton3_vec = NumberWithUnit::mul_vals_vec(nwu_vec.clone());
+    // this will not work. The first call takes ownership of the vector
+    // let newton4_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
+    // let newton5_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
     println!("newton1_vec = {:?}, newton2_vec = {:?}, newton3_vec = {:?}", newton1_vec, newton2_vec, newton3_vec);
 }
