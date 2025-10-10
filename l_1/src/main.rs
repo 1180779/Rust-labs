@@ -35,13 +35,7 @@ fn main() {
         println!("colatz_arr = {:?}", colatz_arr);
 
         // write all to file
-        let wres = file.write_all(
-            format!(
-                "{:?}\n",
-                colatz_arr
-            )
-                .as_bytes(),
-        );
+        let wres = file.write_all(format!("{:?}\n", colatz_arr).as_bytes());
         if wres.is_err() {
             break true;
         }
@@ -118,10 +112,7 @@ fn main() {
         };
     };
 
-    println!(
-        "Secret is: '{}', Secret code is: {}",
-        tuple.0, tuple.1
-    );
+    println!("Secret is: '{}', Secret code is: {}", tuple.0, tuple.1);
 }
 
 fn exponents(x: u64) -> [u64; 10] {
