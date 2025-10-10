@@ -91,7 +91,7 @@ impl NumberWithUnit {
 
         let mut result = vec[0].clone();
         for item in &vec[1..] {
-            result.mul_in_place(&item);
+            result.mul_in_place(item);
         }
         result
     }
@@ -151,15 +151,29 @@ fn main() {
     println!("{:?}", mul_energy);
 
     /* use functions in place */
-    /* TODO: implement */
+    println!("\n\nFunctions in place");
+    let mut dist1 = NumberWithUnit::with_unit(530.0, String::from("m"));
+    let dist2 = NumberWithUnit::with_unit(120.0, String::from("m"));
+    dist1.add_in_place(&dist2);
+    println!("{:?} = {:?} + {:?}", add_dist, dist1, dist2);
+
+    let mut vel1 = NumberWithUnit::with_unit(10.0, String::from("km"));
+    let vel2 = NumberWithUnit::with_unit(10.0 / 3600.0, String::from("h"));
+    vel1.div_in_place(&vel2);
+    println!("{:?} = {:?} * {:?}", div_vel, vel1, vel2);
+
+    let mut energy1 = NumberWithUnit::with_unit(0.8, String::from("kW"));
+    let energy2 = NumberWithUnit::with_unit(8.0, String::from("h"));
+    energy1.mul_in_place(&energy2);
+    println!("{:?} = {:?} / {:?}", mul_energy, energy1, energy2);
 
     /* multiply values in a slice */
     println!("\n\nMultiply values in a slice");
     let nwu_arr = [
-        NumberWithUnit::with_unit(1.0, String::from("kg")),
-        NumberWithUnit::with_unit(2.0, String::from("m")),
-        NumberWithUnit::with_unit(3.0, String::from("1/s")),
+        NumberWithUnit::with_unit(2.0, String::from("kg")),
+        NumberWithUnit::with_unit(3.0, String::from("m")),
         NumberWithUnit::with_unit(4.0, String::from("1/s")),
+        NumberWithUnit::with_unit(5.0, String::from("1/s")),
     ];
 
     let newton1 = NumberWithUnit::mul_vals(&nwu_arr);
@@ -199,7 +213,7 @@ fn main() {
     let string = String::from("Hello");
     let str_slice = " World!";
 
-    /* str_slice does not need & because the str is TODO: */
+    /* str_slice does not need & because the str is already a &str (str reference) */
     let double_str1 = DoubleString::from_strs(&string, str_slice);
     // this will not work. The str_slice is not a String, it does not own the value
     // let double_str2 = DoubleString::from_strings(&string, str_slice);
