@@ -75,16 +75,24 @@ impl NumberWithUnit {
     }
 
     fn mul_vals(slice: &[NumberWithUnit]) -> NumberWithUnit {
-        let mut result = NumberWithUnit::unitless(0.0);
-        for item in slice {
+        if slice.is_empty() {
+            return NumberWithUnit::unitless(0.0);
+        }
+
+        let mut result = slice[0].clone();
+        for item in &slice[1..] {
             result.mul_in_place(item);
         }
         result
     }
 
     fn mul_vals_vec(vec: Vec<NumberWithUnit>) -> NumberWithUnit {
-        let mut result = NumberWithUnit::unitless(0.0);
-        for item in vec {
+        if vec.is_empty() {
+            return NumberWithUnit::unitless(0.0);
+        }
+
+        let mut result = vec[0].clone();
+        for item in &vec[1..] {
             result.mul_in_place(&item);
         }
         result
@@ -93,6 +101,7 @@ impl NumberWithUnit {
 
 fn main() {
     /* use constructors and print values */
+    println!("Constructors");
     let nwu1 = NumberWithUnit::unitless(1.0);
     let nwu2 = NumberWithUnit::with_unit(15.0, String::from("km"));
     let nwu3 = NumberWithUnit::with_unit_from(5.0, String::from("s"));
@@ -102,6 +111,7 @@ fn main() {
     println!("{:?}", nwu3);
 
     /* use the functions and print values */
+    println!("\n\nFunctions");
     let dist1 = NumberWithUnit::with_unit(530.0, String::from("m"));
     let dist2 = NumberWithUnit::with_unit(120.0, String::from("m"));
     let add_dist = dist1.add(dist2);
@@ -121,8 +131,9 @@ fn main() {
     /* TODO: implement */
 
     /* multiply values in a slice */
+    println!("\n\nMultiply values in a slice");
     let nwu_arr = [
-        NumberWithUnit::with_unit(1.0, String::from("k")),
+        NumberWithUnit::with_unit(1.0, String::from("kg")),
         NumberWithUnit::with_unit(2.0, String::from("m")),
         NumberWithUnit::with_unit(3.0, String::from("1/s")),
         NumberWithUnit::with_unit(4.0, String::from("1/s")),
@@ -131,11 +142,17 @@ fn main() {
     let newton1 = NumberWithUnit::mul_vals(&nwu_arr);
     let newton2 = NumberWithUnit::mul_vals(&nwu_arr);
     let newton3 = NumberWithUnit::mul_vals(&nwu_arr);
-    println!("newton1 = {:?}, newton2 = {:?}, newton3 = {:?}", newton1, newton2, newton3);
+    let empty_mul = NumberWithUnit::mul_vals(&[]);
+    println!(
+        "newton1 = {:?}, newton2 = {:?}, newton3 = {:?}",
+        newton1, newton2, newton3
+    );
+    println!("empty_mul = {:?}", empty_mul);
 
     /* multiply values in a vector */
+    println!("\n\nMultiply values in a vector");
     let nwu_vec = vec![
-        NumberWithUnit::with_unit(1.0, String::from("k")),
+        NumberWithUnit::with_unit(1.0, String::from("kg")),
         NumberWithUnit::with_unit(2.0, String::from("m")),
         NumberWithUnit::with_unit(3.0, String::from("1/s")),
         NumberWithUnit::with_unit(4.0, String::from("1/s")),
@@ -147,5 +164,13 @@ fn main() {
     // this will not work. The first call takes ownership of the vector
     // let newton4_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
     // let newton5_vec = NumberWithUnit::mul_vals_vec(nwu_vec);
-    println!("newton1_vec = {:?}, newton2_vec = {:?}, newton3_vec = {:?}", newton1_vec, newton2_vec, newton3_vec);
+
+    let empty_vec_mul = NumberWithUnit::mul_vals_vec(vec![]);
+    println!(
+        "newton1_vec = {:?}, newton2_vec = {:?}, newton3_vec = {:?}",
+        newton1_vec, newton2_vec, newton3_vec
+    );
+    println!("empty_vec_mul = {:?}", empty_vec_mul);
+
+
 }
