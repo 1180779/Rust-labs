@@ -1,4 +1,34 @@
-fn main() {}
+fn main() {
+    /* Var */
+    let vx = Var::X;
+    let vy = Var::Z;
+    let vz = Var::Z;
+
+    println!("var X = {:?}, var Y = {:?}, var Z = {:?}", vx.to_string(), vy.to_string(), vz.to_string());
+
+    /* Const */
+    let cnumeric = Const::Numeric(0);
+    let cnamed = Const::Named("a".into());
+
+    println!("constant numeric = {:?}, named numeric = {:?}", cnumeric.to_string(), cnamed.to_string());
+
+    /* Expression (E) */
+    let eadd = E::add(E::constant(Const::Numeric(1)), E::constant(Const::Numeric(1)));
+    let eneg = E::neg(E::constant(Const::Numeric(1)));
+    let emul = E::mul(E::constant(Const::Numeric(1)), E::constant(Const::Numeric(1)));
+    let einv = E::inv(E::constant(Const::Numeric(2)));
+    let econst = E::constant(Const::Named("c".into()));
+    let efunc = E::func("f".into(), E::var(Var::X));
+    let evar = E::var(Var::X);
+
+    println!("(E) add = {}", eadd.to_string());
+    println!("(E) neg = {}", eneg.to_string());
+    println!("(E) mul = {}", emul.to_string());
+    println!("(E) inv = {}", einv.to_string());
+    println!("(E) econst = {}", econst.to_string());
+    println!("(E) efunc = {}", efunc.to_string());
+    println!("(E) evar = {}", evar.to_string());
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 enum Var {
