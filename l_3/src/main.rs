@@ -1,7 +1,7 @@
 fn main() {
     /* Var */
     let vx = Var::X;
-    let vy = Var::Z;
+    let vy = Var::Y;
     let vz = Var::Z;
 
     println!("var X = {:?}, var Y = {:?}, var Z = {:?}", vx.to_string(), vy.to_string(), vz.to_string());
@@ -28,6 +28,13 @@ fn main() {
     println!("(E) econst = {}", econst.to_string());
     println!("(E) efunc = {}", efunc.to_string());
     println!("(E) evar = {}", evar.to_string());
+
+    println!("eadd.arg_count() = {}", eadd.arg_count());
+    println!("f diff by X = {:?}", efunc.clone().diff(Var::X));
+    println!("uninv(f) = {:?}", E::uninv(efunc.clone()));
+    println!("unneg(f) = {:?}", E::unneg(efunc.clone()));
+    println!("substitute = {:?}", E::substitute(*efunc.clone(), "a", eadd.clone()));
+
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -117,13 +124,13 @@ impl E {
     fn arg_count(&self) -> u32 {
         match self {
             E::Const(_) | E::Var(_) => 0,
-            E::Neg(e) | E::Func { name: _, arg: e } | E::Inv(e) => 1,
-            E::Add(e1, e2) | E::Mul(e1, e2) => 2,
+            E::Neg(_) | E::Func { name: _, arg: _ } | E::Inv(_) => 1,
+            E::Add(_, _) | E::Mul(_, _) => 2,
         }
     }
 
     fn diff(self, by: Var) -> Box<Self> {
-        match (self) {
+        match self {
             E::Add(e1, e2) => E::add(e1.diff(by), e2.diff(by)),
             E::Neg(e) => E::neg(e.diff(by)),
             E::Mul(e1, e2) => E::add(
@@ -134,11 +141,11 @@ impl E {
                 E::neg(E::inv(E::mul(e.clone(), e.clone()))), /* -1 / f(x)^2 */
                 e.diff(by), /* f'(x) */
             ),
-            E::Const(c) => E::constant(Const::Numeric(0)),
+            E::Const(_) => E::constant(Const::Numeric(0)),
             E::Func { name, arg } => E::mul(
                 E::func(format!("{}_{}", name, by.to_string()), arg.clone()),
                 arg.diff(by),
-            ), //E::func(format!("({}_{})", name, by.to_string()), arg),
+            ),
             E::Var(v) => {
                 if v == by {
                     E::constant(Const::Numeric(1))
