@@ -21,13 +21,13 @@ fn main() {
     let efunc = E::func("f".into(), E::var(Var::X));
     let evar = E::var(Var::X);
 
-    println!("(E) add = {}", eadd.to_string());
-    println!("(E) neg = {}", eneg.to_string());
-    println!("(E) mul = {}", emul.to_string());
-    println!("(E) inv = {}", einv.to_string());
-    println!("(E) econst = {}", econst.to_string());
-    println!("(E) efunc = {}", efunc.to_string());
-    println!("(E) evar = {}", evar.to_string());
+    println!("(E) add = {}", eadd);
+    println!("(E) neg = {}", eneg);
+    println!("(E) mul = {}", emul);
+    println!("(E) inv = {}", einv);
+    println!("(E) econst = {}", econst);
+    println!("(E) efunc = {}", efunc);
+    println!("(E) evar = {}", evar);
 
     println!("eadd.arg_count() = {}", eadd.arg_count());
     println!("f diff by X = {:?}", efunc.clone().diff(Var::X));
@@ -44,12 +44,12 @@ enum Var {
     Z,
 }
 
-impl Var {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Var {
+    fn  fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Var::X => str::to_string("X"),
-            Var::Y => str::to_string("Y"),
-            Var::Z => str::to_string("Z"),
+            Var::X => write!(f, "X"),
+            Var::Y => write!(f, "Y"),
+            Var::Z => write!(f, "Z"),
         }
     }
 }
@@ -60,11 +60,11 @@ enum Const {
     Named(String),
 }
 
-impl Const {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Const {
+    fn  fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
-            Const::Numeric(n) => n.to_string(),
-            Const::Named(n) => n.clone(),
+            Const::Numeric(n) => write!(f, "{}", n),
+            Const::Named(n) => write!(f, "{}", n),
         }
     }
 }
@@ -109,18 +109,6 @@ impl E {
         Box::new(E::Var(v))
     }
 
-    fn to_string(&self) -> String {
-        match self {
-            E::Add(e1, e2) => format!("({} + {})", e1.to_string(), e2.to_string()),
-            E::Neg(e) => format!("-({})", e.to_string()),
-            E::Mul(e1, e2) => format!("({} * {})", e1.to_string(), e2.to_string()),
-            E::Inv(e) => format!("1/({})", e.to_string()),
-            E::Const(c) => c.to_string(),
-            E::Func { name, arg } => format!("{}({})", name.to_string(), arg.to_string()),
-            E::Var(v) => v.to_string(),
-        }
-    }
-
     fn arg_count(&self) -> u32 {
         match self {
             E::Const(_) | E::Var(_) => 0,
@@ -143,7 +131,7 @@ impl E {
             ),
             E::Const(_) => E::constant(Const::Numeric(0)),
             E::Func { name, arg } => E::mul(
-                E::func(format!("{}_{}", name, by.to_string()), arg.clone()),
+                E::func(format!("{}_{}", name, by), arg.clone()),
                 arg.diff(by),
             ),
             E::Var(v) => {
@@ -212,6 +200,20 @@ impl E {
             }
             E::Func { name: n, arg } => E::func(n.clone(), arg.clone().substitute(name, value)),
             E::Var(_) => Box::new(self),
+        }
+    }
+}
+
+impl std::fmt::Display for E {
+    fn  fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            E::Add(e1, e2) => write!(f, "({} + {})", e1, e2),
+            E::Neg(e) => write!(f, "-({})", e),
+            E::Mul(e1, e2) => write!(f, "({} * {})", e1, e2),
+            E::Inv(e) => write!(f, "1/({})", e),
+            E::Const(c) => write!(f, "{}", c),
+            E::Func { name, arg } => write!(f, "{}({})", name, arg),
+            E::Var(v) => write!(f, "{}", v),
         }
     }
 }
