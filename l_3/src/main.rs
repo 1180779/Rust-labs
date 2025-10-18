@@ -74,21 +74,21 @@ impl E {
 
     fn to_string(&self) -> String {
         match self {
-            E::Add(e1, e2) => format!("{} + {}", e1.to_string(), e2.to_string()),
-            E::Neg(e) => format!("- {}", e.to_string()),
-            E::Mul(e1, e2) => format!("{} * {}", e1.to_string(), e2.to_string()),
-            E::Inv(e) => format!("{} inv {}", e.to_string(), e.to_string()),
+            E::Add(e1, e2) => format!("({} + {})", e1.to_string(), e2.to_string()),
+            E::Neg(e) => format!("-({})", e.to_string()),
+            E::Mul(e1, e2) => format!("({} * {})", e1.to_string(), e2.to_string()),
+            E::Inv(e) => format!("1/({})", e.to_string()),
             E::Const(c) => c.to_string(),
-            E::Func { name, arg } => format!("{} ({})", name.to_string(), arg.to_string()),
+            E::Func { name, arg } => format!("{}({})", name.to_string(), arg.to_string()),
             E::Var(v) => v.to_string(),
         }
     }
 
     fn arg_count(&self) -> u32 {
         match self {
-            E::Const(_) => 0,
-            E::Neg(_) | E::Func { name: _, arg: _ } | E::Var(_) | E::Inv(_) => 1,
-            E::Add(_, _) | E::Mul(_, _) => 2,
+            E::Const(_) | E::Var(_) => 0,
+            E::Neg(e) | E::Func { name: _, arg: e } | E::Inv(e) => 1,
+            E::Add(e1, e2) | E::Mul(e1, e2) => 2,
         }
     }
 
@@ -100,10 +100,22 @@ impl E {
                 E::mul(e1.clone().diff(by), e2.clone()),
                 E::mul(e1, e2.diff(by)),
             ),
-            E::Inv(e) => E::neg(E::mul(e.clone().diff(by), E::mul(e.clone(), e))),
+            E::Inv(e) => E::mul(
+                E::neg(E::inv(E::mul(e.clone(), e.clone()))), /* -1 / f(x)^2 */
+                e.diff(by), /* f'(x) */
+            ),
             E::Const(c) => E::constant(Const::Numeric(0)),
-            E::Func { name, arg } => E::func(format!("d{}/d{}", name, by.to_string()), arg),
-            E::Var(v) => E::constant(Const::Numeric(1)),
+            E::Func { name, arg } => E::mul(
+                E::func(format!("{}_{}", name, by.to_string()), arg.clone()),
+                arg.diff(by),
+            ), //E::func(format!("({}_{})", name, by.to_string()), arg),
+            E::Var(v) => {
+                if v == by {
+                    E::constant(Const::Numeric(1))
+                } else {
+                    E::constant(Const::Numeric(0))
+                }
+            }
         }
     }
 
@@ -136,7 +148,7 @@ impl E {
 
     fn unneg(self: Box<Self>) -> Box<Self> {
         let mut temp = self;
-        while let Some(unneged) = temp.clone().unpack_inv_inv() {
+        while let Some(unneged) = temp.clone().unpack_neg_neg() {
             temp = unneged;
         }
         temp
@@ -161,8 +173,8 @@ impl E {
                     Box::new(self)
                 }
             }
-            E::Func { name, arg } => E::func(name.clone(), arg.clone().substitute(name, value)),
-            E::Var(e) => Box::new(self),
+            E::Func { name: n, arg } => E::func(n.clone(), arg.clone().substitute(name, value)),
+            E::Var(_) => Box::new(self),
         }
     }
 }
