@@ -22,9 +22,9 @@ impl NumberWithUnit {
         Self { unit, value }
     }
 
-    fn with_unit_from(value: f64, unit: String) -> Self {
+    fn with_unit_from(other: Self, value: f64) -> Self {
         Self {
-            unit: unit.clone(),
+            unit: other.unit,
             value,
         }
     }
@@ -74,7 +74,7 @@ impl NumberWithUnit {
 
     fn mul_vals(slice: &[NumberWithUnit]) -> NumberWithUnit {
         if slice.is_empty() {
-            return NumberWithUnit::unitless(0.0);
+            return NumberWithUnit::unitless(1.0);
         }
 
         let mut result = slice[0].clone();
@@ -97,28 +97,21 @@ impl NumberWithUnit {
     }
 }
 
-struct DoubleString {
-    str_1: String,
-    str_2: String,
-}
+
+
+struct DoubleString(String, String);
 
 impl DoubleString {
     fn from_strs(str_1: &str, str_2: &str) -> Self {
-        Self {
-            str_1: String::from(str_1),
-            str_2: String::from(str_2),
-        }
+        Self(String::from(str_1), String::from(str_2))
     }
 
     fn from_strings(str_1: &String, str_2: &String) -> Self {
-        Self {
-            str_1: str_1.clone(),
-            str_2: str_2.clone(),
-        }
+        Self(str_1.clone(), str_2.clone())
     }
 
     fn show(&self) {
-        println!("({}, {})", self.str_1, self.str_2);
+        println!("({}, {})", self.0, self.1);
     }
 }
 
@@ -127,7 +120,8 @@ fn main() {
     println!("Constructors");
     let nwu1 = NumberWithUnit::unitless(1.0);
     let nwu2 = NumberWithUnit::with_unit(15.0, String::from("km"));
-    let nwu3 = NumberWithUnit::with_unit_from(5.0, String::from("s"));
+    let nwu3 =
+        NumberWithUnit::with_unit_from(NumberWithUnit::with_unit(15.0, String::from("km")), 5.0);
 
     println!("{:?}", nwu1);
     println!("{:?}", nwu2);
