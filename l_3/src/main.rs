@@ -4,18 +4,33 @@ fn main() {
     let vy = Var::Y;
     let vz = Var::Z;
 
-    println!("var X = {:?}, var Y = {:?}, var Z = {:?}", vx.to_string(), vy.to_string(), vz.to_string());
+    println!(
+        "var X = {:?}, var Y = {:?}, var Z = {:?}",
+        vx.to_string(),
+        vy.to_string(),
+        vz.to_string()
+    );
 
     /* Const */
     let cnumeric = Const::Numeric(0);
     let cnamed = Const::Named("a".into());
 
-    println!("constant numeric = {:?}, named numeric = {:?}", cnumeric.to_string(), cnamed.to_string());
+    println!(
+        "constant numeric = {:?}, named numeric = {:?}",
+        cnumeric.to_string(),
+        cnamed.to_string()
+    );
 
     /* Expression (E) */
-    let eadd = E::add(E::constant(Const::Numeric(1)), E::constant(Const::Numeric(1)));
+    let eadd = E::add(
+        E::constant(Const::Numeric(1)),
+        E::constant(Const::Numeric(1)),
+    );
     let eneg = E::neg(E::constant(Const::Numeric(1)));
-    let emul = E::mul(E::constant(Const::Numeric(1)), E::constant(Const::Numeric(1)));
+    let emul = E::mul(
+        E::constant(Const::Numeric(1)),
+        E::constant(Const::Numeric(1)),
+    );
     let einv = E::inv(E::constant(Const::Numeric(2)));
     let econst = E::constant(Const::Named("c".into()));
     let efunc = E::func("f".into(), E::var(Var::X));
@@ -33,8 +48,10 @@ fn main() {
     println!("f diff by X = {:?}", efunc.clone().diff(Var::X));
     println!("uninv(f) = {:?}", E::uninv(efunc.clone()));
     println!("unneg(f) = {:?}", E::unneg(efunc.clone()));
-    println!("substitute = {:?}", E::substitute(*efunc.clone(), "a", eadd.clone()));
-
+    println!(
+        "substitute = {:?}",
+        E::substitute(*efunc.clone(), "a", eadd.clone())
+    );
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -45,7 +62,7 @@ enum Var {
 }
 
 impl std::fmt::Display for Var {
-    fn  fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             Var::X => write!(f, "X"),
             Var::Y => write!(f, "Y"),
@@ -61,7 +78,7 @@ enum Const {
 }
 
 impl std::fmt::Display for Const {
-    fn  fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self {
             Const::Numeric(n) => write!(f, "{}", n),
             Const::Named(n) => write!(f, "{}", n),
@@ -127,7 +144,7 @@ impl E {
             ),
             E::Inv(e) => E::mul(
                 E::neg(E::inv(E::mul(e.clone(), e.clone()))), /* -1 / f(x)^2 */
-                e.diff(by), /* f'(x) */
+                e.diff(by),                                   /* f'(x) */
             ),
             E::Const(_) => E::constant(Const::Numeric(0)),
             E::Func { name, arg } => E::mul(
@@ -205,7 +222,7 @@ impl E {
 }
 
 impl std::fmt::Display for E {
-    fn  fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             E::Add(e1, e2) => write!(f, "({} + {})", e1, e2),
             E::Neg(e) => write!(f, "-({})", e),

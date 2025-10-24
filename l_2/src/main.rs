@@ -97,8 +97,6 @@ impl NumberWithUnit {
     }
 }
 
-
-
 struct DoubleString(String, String);
 
 impl DoubleString {
