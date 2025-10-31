@@ -199,24 +199,26 @@ impl<'a, T: Expr> Expr for Volatile<'a, T> {
 type Context = HashMap<&'static str, u64>;
 
 fn main() {
-    let context = Context::new();
+    let mut context: Context = Context::new();
+    _ = context.insert("x", 10);
+    _ = context.insert("y", 10);
+    _ = context.insert("z", 10);
 
-    let
-
-    let mut program = seq(
-        print(when(constant("y"), 1, 2)),
-        seq(nothing(), print(when(constant("x"), 1, 2))),
+    let mut program =
+        seq(
+        print(when(constant("y"), 1, 0)),
+        seq(nothing(), print(when(constant("x"), 2, 0))),
     );
     program.exec_stmt(&context);
 
-    let seq1 = seq(nothing(), print(when(constant("y"), 1, 2)));
+    let seq1 = seq(nothing(), print(when(constant("y"), 4, 0)));
     seq1.shorten_2().exec_stmt(&context);
-    let seq2 = seq(print(when(constant("x"), 1, 2)), nothing());
+    let seq2 = seq(print(when(constant("x"), 8, 0)), nothing());
     seq2.shorten_1().exec_stmt(&context);
     let seqn = seq(nothing(), nothing());
     seqn.collapse().exec_stmt(&context);
 
-    let mut rep = repeat::<5, _>(seq(nothing(), print(when(constant("z"), 1, 2))));
+    let mut rep = repeat::<5, _>(seq(nothing(), print(when(constant("z"), 16, 0))));
     rep.exec_stmt(&context);
 
     let mut x = 0;
@@ -224,10 +226,10 @@ fn main() {
     rf.exec_expr(&context);
 
 
-    let mut svin = save_in(&mut x, when(constant("z"), 5, 10));
+    let mut svin = save_in(&mut x, when(constant("z"), 32, 0));
     svin.exec_expr(&context);
 
-    let mut vol = volatile(&mut x, "x", 5);
+    let mut vol = volatile(&mut x, "x", 64);
     vol.exec_expr(&context);
 }
 
