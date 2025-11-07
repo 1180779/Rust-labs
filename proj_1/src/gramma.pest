@@ -1,0 +1,38 @@
+Q = { S | C | I | D }
+
+// types
+float = { "-"? ~ value ~ "." ~ value? }
+string = { ASCII_ALPHANUMERIC+ }
+int = { "-"? ~ value }
+bool = { ^"TRUE" | ^"FALSE" }
+
+where_clause = { WHERE ~ field ~ op ~ value }
+op = { "=" | "!+" | ">=" | "<=" | ">" | "<" }
+value = { ASCII_DIGIT+ }
+ftype = { ^"BOOL" | ^"STRING" | ^"INT" | ^"FLOAT" }
+whitespace = _{ (" " | "\t" | "\n") }
+field_value = { float | int | bool | string }
+
+fields = { (field ~ whitespace* ~ "," ~ whitespace*)* ~ field | "*" }
+fields_types = { (field_type ~ whitespace* ~ "," ~ whitespace*)* ~ field_type }
+field_value_setters = { ( field_value_setter ~ whitespace* ~ "," ~ whitespace* )* ~ field_value_setter }
+
+field_value_setter = { field ~ whitespace+ ~ "=" ~ whitespace+ ~ field_value }
+field_type = { field ~ whitespace*~ ":" ~ whitespace* ~ ftype }
+field = { ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+table = { ASCII_ALPHA ~ ASCII_ALPHANUMERIC* }
+
+SELECT = _{ ^"SELECT" }
+CREATE = _{ ^"CREATE" }
+DELETE = _{ ^"DELETE" }
+INSERT = _{ ^"INSERT" }
+FIELDS = _{ ^"FIELDS" }
+INTO = _{ ^"INTO" }
+FROM = _{ ^"FROM" }
+WHERE = _{ ^"WHERE" }
+KEY = _{ ^"KEY" }
+
+S = { SELECT ~ whitespace+ ~ fields ~ whitespace+ ~ FROM ~ whitespace+ ~ table ~ where_clause? }
+C = { CREATE ~ whitespace+ ~ table ~ whitespace+ ~ KEY ~ whitespace+ ~ field ~ whitespace+ ~ FIELDS ~ whitespace+ ~ fields_types }
+I = { INSERT ~ whitespace+ ~ field_value_setters ~ whitespace+ ~ INTO ~ whitespace+ ~ table }
+D = { DELETE ~ whitespace+ ~ field ~ whitespace+ ~ FROM ~ whitespace+ ~ table }
