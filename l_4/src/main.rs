@@ -2,6 +2,20 @@ use std::io::{Read, Write};
 use std::str::FromStr;
 use std::{hint, time};
 
+/*
+    Usage:
+
+    Use with netcat (nc):
+    First provide the number of characters to be read in format XXXX.
+    In the second line provide the path.
+
+    ex.
+    """
+    0001
+    /
+    """
+ */
+
 fn divisors(n: std::num::NonZero<u32>) -> std::collections::BTreeSet<std::num::NonZero<u32>> {
     let u = n.get();
     let mut result = std::collections::BTreeSet::<std::num::NonZero<u32>>::new();
@@ -102,7 +116,6 @@ fn handle_client(stream: std::net::TcpStream) -> std::io::Result<()> {
 
     /* read the path (+2 newline characters, which will be discarded) */
     let bytes = bulk_read(&mut stream, len + 2)?;
-    println!("Read: {:?}", bytes);
     let path = String::from_utf8(bytes);
     match path {
         Ok(path) => {
