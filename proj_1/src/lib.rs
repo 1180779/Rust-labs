@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Error;
+use std::os::unix::fs::lchown;
 use pest::Parser;
 use crate::parsing::{GrammaParser, Rule};
 
@@ -26,19 +27,37 @@ enum AnyDatabase {
 }
 
 impl DatabaseKey for String {
+    fn new() -> Self {
+        String::new()
+    }
     fn is_equal_to(&self, other: &Self) -> bool {
         self == other
+    }
+
+    fn gramma_from_str(str: &str) -> Option<Self> {
+        if str.len() >= 2 {
+            return Some(str[1..str.len() - 1].to_string());
+        }
+        None
     }
 }
 
 impl DatabaseKey for i64 {
+    fn new() -> i64 {
+        i64::new()
+    }
     fn is_equal_to(&self, other: &Self) -> bool {
         self == other
     }
+    fn gramma_from_str(str: &str) -> Option<Self> {
+        str.parse::<i64>().ok()
+    }
 }
 
-pub trait DatabaseKey {
+pub trait DatabaseKey where Self: std::str::FromStr {
+    fn new() -> Self;
     fn is_equal_to(&self, other: &Self) -> bool;
+    fn gramma_from_str(str: &str) -> Option<Self>;
 }
 
 pub struct Interpreter {
@@ -129,14 +148,28 @@ pub struct SelectQuery {
     table: String,
 }
 
-/* translate parse result into my types */
-pub fn ParseQuery<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
-    let q = GrammaParser::parse(Rule::Q, &query)
-        .expect("unsuccessful parse") // unwrap the parse result
-        .next()
-        .unwrap(); // get and unwrap the `file` rule; never fails
-    let q_rule = q.as_rule();
-    let q_inner = q.into_inner().next().unwrap();
+
+
+/* parse and translate result into custom types for further processing */
+pub fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
+    // parse the passed string; expect one query
+    let q = GrammaParser::parse(Rule::Q, &query);
+    if let Err(e) = q {
+        return Err(format!("{}", e));
+    }
+
+    let q = q.unwrap().next();
+    if q.is_none() {
+        return Err("query was empty".into());
+    }
+
+    let q = q.unwrap();
+    let q_inner = q.into_inner().next();
+    if q_inner.is_none() {
+        return Err("query was empty".into());
+    }
+
+    let q_inner = q_inner.unwrap();
     match q_inner.as_rule() {
         Rule::S => {
             let mut fields = Vec::<String>::new();
@@ -177,28 +210,25 @@ pub fn ParseQuery<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
                     Rule::fields_types => {
                         let inner = c_inner.into_inner();
                         for inner_inner in inner {
-                            match inner_inner.as_rule() {
-                                Rule::field_type => {
-                                    let mut field = String::new();
-                                    let mut field_type = FieldType::String;
+                            if inner_inner.as_rule() == Rule::field_type {
+                                let mut field = String::new();
+                                let mut field_type = FieldType::String;
 
-                                    for inner_inner in inner_inner.into_inner() {
-                                        match inner_inner.as_rule() {
-                                            Rule::field => {
-                                                field = inner_inner.as_str().to_string();
-                                            },
-                                            Rule::ftype => {
-                                                field_type = FieldType::from_str(inner_inner.as_str()).unwrap()
-                                            },
-                                            _ => { }
-                                        }
+                                for inner_inner in inner_inner.into_inner() {
+                                    match inner_inner.as_rule() {
+                                        Rule::field => {
+                                            field = inner_inner.as_str().to_string();
+                                        },
+                                        Rule::ftype => {
+                                            field_type = FieldType::from_str(inner_inner.as_str()).unwrap()
+                                        },
+                                        _ => { }
                                     }
-                                    fields_types.push(NewField{
-                                        field,
-                                        field_type
-                                    })
-                                },
-                                _ => { }
+                                }
+                                fields_types.push(NewField{
+                                    field,
+                                    field_type
+                                })
                             }
                         }
                     },
@@ -209,6 +239,78 @@ pub fn ParseQuery<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
                 table,
                 key_field,
                 fields_types
+            }))
+        }
+        Rule::I => {
+            let mut table = String::new();
+            let mut insert_values = Vec::<InsertValue>::new();
+            for inner in q_inner.into_inner() {
+                match inner.as_rule() {
+                    Rule::table => {
+                        table = inner.as_str().to_string();
+                    },
+                    Rule::field_value_setters => {
+                        for inner in inner.into_inner() {
+                            let inner_inner = inner.into_inner();
+                            let mut field = String::new();
+                            let mut value = Value::String("".into());
+                            for inner_inner in inner_inner {
+                                match inner_inner.as_rule() {
+                                    Rule::field => {
+                                        field = inner_inner.as_str().to_string();
+                                    },
+                                    Rule::field_value => {
+                                        let inner = inner_inner.into_inner().next().unwrap();
+                                        match inner.as_rule() {
+                                            Rule::bool => {
+                                                value = Value::Bool(inner.as_str().parse().unwrap());
+                                            },
+                                            Rule::string => {
+                                                value = Value::String(inner.as_str()[1..inner.as_str().len() - 1].to_string());
+                                            },
+                                            Rule::int => {
+                                                value = Value::Int(inner.as_str().parse().unwrap());
+                                            },
+                                            Rule::float => {
+                                                value = Value::Float(inner.as_str().parse().unwrap());
+                                            },
+                                            _ => {}
+                                        }
+                                    },
+                                    _ => { }
+                                }
+                            }
+                            insert_values.push(InsertValue{
+                                field,
+                                value
+                            })
+                        }
+                    },
+                    _ => {}
+                }
+            }
+            Ok(Query::Insert(InsertQuery{
+                table,
+                insert_values
+            }))
+        },
+        Rule::D => {
+            let mut key: K = K::new();
+            let mut table = String::new();
+            for inner in q_inner.into_inner() {
+                match inner.as_rule() {
+                    Rule::table => {
+                        table = inner.as_str().to_string();
+                    },
+                    Rule::key_value => {
+                        key = K::gramma_from_str(inner.as_str()).unwrap();
+                    },
+                    _ => {}
+                };
+            }
+            Ok(Query::Delete(DeleteQuery{
+                key,
+                table
             }))
         }
         _ => {
