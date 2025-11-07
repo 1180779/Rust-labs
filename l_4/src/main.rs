@@ -5,7 +5,7 @@ use std::{hint, time};
 /*
     Usage:
 
-    Use with netcat (nc):
+    Use with netcat (nc): "nc 127.0.0.1 7878"
     First provide the number of characters to be read in format XXXX.
     In the second line provide the path.
 
