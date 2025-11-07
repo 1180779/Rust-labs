@@ -1,47 +1,67 @@
+use clap::{Parser, ValueEnum};
+use proj_1::{AnyDatabase, AnyQuery, parse_query};
 use std::io;
-use std::io::Read;
-// use clap::Parser;
-use pest::Parser;
-use proj_1::{parsing, parse_query};
-use proj_1::parsing::{GrammaParser, Rule};
-//
-// #[derive(Parser, Debug)]
-// struct Args {
-//     #[arg(short, long)]
-//     key_type: String,
-// }
+
+#[derive(Clone, Debug, ValueEnum)]
+enum KeyType {
+    String,
+    Int,
+}
+
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(short, long, value_enum)]
+    key_type: KeyType,
+}
 
 fn main() {
-    // let args = Args::parse();
+    let args = Args::parse();
+    let mut line = String::new();
 
-    // let mut line = String::new();
-    // let line_res = io::stdin().read_line(&mut line).unwrap();
-    // line = line.trim().into();
+    let mut db: AnyDatabase = match args.key_type {
+        KeyType::String => AnyDatabase::new_string_database(),
+        KeyType::Int => AnyDatabase::new_int_database(),
+    };
 
-
-    // TODO: change .pest to be ascii independent
-    let mut line = String::from("SELECT field1,field2, field3    ,field4 FROM sample_table");
-    line = String::from("CREATE table KEY keyfield FIELDS field1: bool, field2: int, field3: float, field4: StrIng");
-    line = String::from("INSERT field1 = 'value1', field2 = 'value2', field3 = false INTO table");
-    line = String::from("DELETE 'key1' FROM table");
-    let parsed = parse_query::<String>(&line);
-    match parsed {
-        Ok(query) => {
-            println!("{:?}", query);
-        },
-        Err(e) => {
-            println!("{:?}", e);
-        }
-    }
-
-    /*let mut line = String::new();
-    while let line_res = io::stdin().read_line(&mut line) {
+    println!("Empty query ends");
+    loop {
+        line.clear();
+        let line_res = io::stdin().read_line(&mut line);
         if let Err(e) = line_res {
             println!("Failed to read line: {:?}", e);
             continue;
         }
-        // TODO: parsing
-        todo!();
-        break;
-    }*/
+
+        let line_res = line_res.unwrap();
+        if line_res == 0 {
+            println!("Shutting down...");
+            break;
+        }
+
+        let query: AnyQuery = match args.key_type {
+            KeyType::String => {
+                let parse_res = parse_query::<String>(&line);
+                if parse_res.is_err() {
+                    let e = parse_res.err().unwrap();
+                    println!("Failed to parse query: {:?}", e);
+                    continue;
+                }
+                AnyQuery::StringQuery(parse_res.unwrap())
+            }
+            KeyType::Int => {
+                let parse_res = parse_query::<i64>(&line);
+                if parse_res.is_err() {
+                    let e = parse_res.err().unwrap();
+                    println!("Failed to parse query: {:?}", e);
+                    continue;
+                }
+                AnyQuery::IntQuery(parse_res.unwrap())
+            }
+        };
+        println!("Parsed query: {:?}", query);
+        let result = db.execute(query);
+        println!("Execution result: {:?}", result);
+        println!("--------------------------");
+        println!();
+    }
 }
