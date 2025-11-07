@@ -44,23 +44,16 @@ fn divisors_benchmark() {
         ));
     }
     let avg = sum / 100;
-    println!(
-        "avg time is {}.{}ms ({:?})",
-        avg.as_millis(),
-        avg.as_micros(),
-        avg
-    );
+    println!("avg time is {:.3}ms", avg.as_nanos() as f64 / 1_000_000.0);
 }
 
 fn bulk_write(stream: &mut std::net::TcpStream, buf: &[u8]) -> std::io::Result<()> {
     let mut written = 0;
-    let mut count = 1;
-    while count > 0 {
+    while written < buf.len() {
         let res = stream.write(&buf[written..buf.len()]);
         match res {
             Ok(written_this_time) => {
                 written += written_this_time;
-                count = written_this_time;
             }
             Err(e) => return Err(e),
         }
@@ -69,23 +62,17 @@ fn bulk_write(stream: &mut std::net::TcpStream, buf: &[u8]) -> std::io::Result<(
 }
 
 fn bulk_read(stream: &mut std::net::TcpStream, size: usize) -> std::io::Result<Vec<u8>> {
-    let mut adapter = stream.take(size.try_into().unwrap());
+    let mut vec = vec![0; size];
+    let mut bytes_read = 0;
 
-    const BUFF_SIZE: usize = 1024;
-    let mut buffer: [u8; BUFF_SIZE] = [0; BUFF_SIZE];
-    let mut count = 1;
-    let mut vec = Vec::<u8>::new();
-    while count > 0 {
-        let res = adapter.read(&mut buffer);
-        match res {
-            Ok(read_this_time) => {
-                vec.append(&mut buffer[0..read_this_time].to_vec());
-                count = read_this_time;
-            }
+    while bytes_read < size {
+        match stream.read(&mut vec[bytes_read..]) {
+            Ok(0) => return Err(std::io::ErrorKind::ConnectionAborted.into()),
+            Ok(read) => { bytes_read += read; }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => { continue }
             Err(e) => return Err(e),
         }
     }
-
     Ok(vec)
 }
 
@@ -128,35 +115,34 @@ fn handle_client(stream: std::net::TcpStream) -> std::io::Result<()> {
                         Ok(dir) => {
                             let files = dir
                                 .map(|d| {
-                                    let str = d.unwrap()
-                                        .path()
-                                        .into_os_string()
-                                        .into_string();
+                                    let str = d.unwrap().path().into_os_string().into_string();
                                     let Ok(str) = str else {
                                         return String::new();
                                     };
                                     str
                                 })
-                                .fold(String::new(), |acc, s| if !s.is_empty() { acc + &s + "\n" } else { acc });
+                                .fold(String::new(), |acc, s| {
+                                    if !s.is_empty() { acc + &s + "\n" } else { acc }
+                                });
                             println!("files = {}", files);
                             bulk_write(&mut stream, files.as_bytes())?;
                         }
                         Err(e) => {
-                            let msg = "Bad path\n".to_string();
+                            let msg = "Bad dir\n".to_string();
                             bulk_write(&mut stream, msg.as_bytes())?;
                             println!("Error: {}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    let msg = "Bad dir\n".to_string();
+                    let msg = "Bad path\n".to_string();
                     bulk_write(&mut stream, msg.as_bytes())?;
                     println!("Error: {}", e);
                 }
             }
         }
         Err(_) => {
-            let msg = format!("Bad path\n({})", 1);
+            let msg = "Bad path\n".to_string();
             bulk_write(&mut stream, msg.as_bytes())?;
             return Ok(());
         }
