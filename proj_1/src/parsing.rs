@@ -1,5 +1,6 @@
 use super::*;
 use pest::Parser;
+use pest::iterators::Pair;
 use pest_derive::Parser;
 
 // TODO: change .pest to be ascii independent
@@ -9,17 +10,17 @@ use pest_derive::Parser;
 pub struct GrammaParser;
 
 #[derive(Debug, PartialEq)]
-pub enum Query<K: DatabaseKey> {
-    Create(CreateQuery),
+pub enum Query<'a, K: DatabaseKey> {
+    Create(CreateQuery<'a>),
     Delete(DeleteQuery<K>),
-    Insert(InsertQuery),
-    Select(SelectQuery),
+    Insert(InsertQuery<'a>),
+    Select(SelectQuery<'a>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct InsertValue {
-    pub field: String,
-    pub value: Value,
+pub struct InsertValue<'a> {
+    pub field: &'a str,
+    pub value: QueryValue<'a>,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -50,9 +51,9 @@ pub struct CreateField {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct InsertQuery {
-    pub insert_values: Vec<InsertValue>,
-    pub table: String,
+pub struct InsertQuery<'a> {
+    pub insert_values: Vec<InsertValue<'a>>,
+    pub table: &'a str,
 }
 
 #[derive(Debug, PartialEq)]
@@ -62,221 +63,268 @@ pub struct DeleteQuery<K: DatabaseKey> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct NewField {
-    pub field: String,
+pub struct NewField<'a> {
+    pub field: &'a str,
     pub field_type: FieldType,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct CreateQuery {
-    pub table: String,
-    pub key_field: String,
-    pub fields_types: Vec<NewField>,
+pub struct CreateQuery<'a> {
+    pub table: &'a str,
+    pub key_field: &'a str,
+    pub fields_types: Vec<NewField<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
-pub struct SelectQuery {
-    pub fields: SelectFields,
-    pub table: String,
+pub struct SelectQuery<'a> {
+    pub fields: SelectFields<'a>,
+    pub table: &'a str,
 }
 
 #[derive(Debug, PartialEq)]
-pub enum SelectFields {
-    Fields(Vec<String>),
+pub enum SelectFields<'a> {
+    Fields(Vec<&'a str>),
     AllFields(),
 }
 
-/* parse and translate result into custom types for further processing */
-pub fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
-    // parse the passed string; expect one query
-    let q = GrammaParser::parse(Rule::Q, query);
-    if let Err(e) = q {
-        return Err(format!("{}", e));
+impl<'a> SelectFields<'a> {
+    pub fn from(v: Vec<&str>) -> SelectFields {
+        SelectFields::Fields(v)
     }
 
-    let q = q.unwrap().next();
-    if q.is_none() {
-        return Err("query was empty".into());
+    pub fn new() -> Self {
+        SelectFields::Fields(Vec::new())
     }
 
-    let q = q.unwrap();
-    let q_inner = q.into_inner().next();
-    if q_inner.is_none() {
-        return Err("query was empty".into());
+    pub fn new_all() -> Self {
+        SelectFields::AllFields()
     }
+}
 
-    let q_inner = q_inner.unwrap();
-    match q_inner.as_rule() {
-        Rule::S => {
-            let mut fields = SelectFields::Fields(Vec::<String>::new());
-            let mut table = String::new();
-            for s_inner in q_inner.into_inner() {
-                match s_inner.as_rule() {
-                    Rule::fields => {
-                        for field_name in s_inner.into_inner() {
-                            if let SelectFields::Fields(mut fields_borrowed) = fields {
-                                fields_borrowed.push(field_name.as_str().to_string());
-                                fields = SelectFields::Fields(fields_borrowed);
-                            }
-                        }
-                    }
-                    Rule::fields_all => {
-                        fields = SelectFields::AllFields();
-                    }
-                    Rule::table => {
-                        table = s_inner.as_str().to_string();
-                    }
-                    Rule::where_clause => {
-                        // TODO: implement
-                    }
-                    _ => {}
-                }
+fn parse_query_field(pair: Pair<Rule>) -> &str {
+    pair.as_str()
+}
+
+fn parse_query_fields(pairs: pest::iterators::Pairs<Rule>) -> Vec<&str> {
+    pairs.map(|pair| parse_query_field(pair)).collect()
+}
+
+fn parse_query_s<K: DatabaseKey>(
+    inner_pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, String> {
+    let mut fields = SelectFields::new();
+    let mut table = "";
+    for s_inner in inner_pairs {
+        match s_inner.as_rule() {
+            Rule::fields => {
+                fields = SelectFields::from(parse_query_fields(s_inner.into_inner()));
             }
-            Ok(Query::Select(SelectQuery { fields, table }))
+            Rule::fields_all => {
+                fields = SelectFields::AllFields();
+            }
+            Rule::table => {
+                table = s_inner.as_str();
+            }
+            Rule::where_clause => {
+                // TODO: implement
+            }
+            _ => {}
         }
-        Rule::C => {
-            let mut table = String::new();
-            let mut key_field = String::new();
-            let mut fields_types = Vec::<NewField>::new();
-            for c_inner in q_inner.into_inner() {
-                match c_inner.as_rule() {
-                    Rule::table => {
-                        table = c_inner.as_str().to_string();
-                    }
+    }
+    Ok(Query::Select(SelectQuery { fields, table }))
+}
+
+fn parse_query_field_types<K: DatabaseKey>(pair: Pair<Rule>) -> Vec<NewField> {
+    let mut fields_types = Vec::<NewField>::new();
+    for inner in pair.into_inner() {
+        if inner.as_rule() == Rule::field_type {
+            let mut field_name = "";
+            let mut field_type = FieldType::String;
+
+            for inner_inner in inner.into_inner() {
+                match inner_inner.as_rule() {
                     Rule::field => {
-                        key_field = c_inner.as_str().to_string();
+                        field_name = inner_inner.as_str();
                     }
-                    Rule::fields_types => {
-                        let inner = c_inner.into_inner();
-                        for inner_inner in inner {
-                            if inner_inner.as_rule() == Rule::field_type {
-                                let mut field_name = String::new();
-                                let mut field_type = FieldType::String;
-
-                                for inner_inner in inner_inner.into_inner() {
-                                    match inner_inner.as_rule() {
-                                        Rule::field => {
-                                            field_name = inner_inner.as_str().to_string();
-                                        }
-                                        Rule::ftype => {
-                                            field_type =
-                                                FieldType::from_str(inner_inner.as_str()).unwrap()
-                                        }
-                                        _ => {}
-                                    }
-                                }
-                                fields_types.push(NewField {
-                                    field: field_name,
-                                    field_type,
-                                })
-                            }
-                        }
-                    }
+                    Rule::ftype => field_type = FieldType::from_str(inner_inner.as_str()).unwrap(),
                     _ => {}
                 }
             }
-            Ok(Query::Create(CreateQuery {
-                table,
-                key_field,
-                fields_types,
-            }))
+            fields_types.push(NewField {
+                field: field_name,
+                field_type,
+            })
         }
-        Rule::I => {
-            let mut table = String::new();
-            let mut insert_values = Vec::<InsertValue>::new();
-            for inner in q_inner.into_inner() {
-                match inner.as_rule() {
-                    Rule::table => {
-                        table = inner.as_str().to_string();
-                    }
-                    Rule::field_value_setters => {
-                        for inner in inner.into_inner() {
-                            let inner_inner = inner.into_inner();
-                            let mut field_name = String::new();
-                            let mut value = Value::String("".into());
-                            for inner_inner in inner_inner {
-                                match inner_inner.as_rule() {
-                                    Rule::field => {
-                                        field_name = inner_inner.as_str().to_string();
-                                    }
-                                    Rule::field_value => {
-                                        let inner = inner_inner.into_inner().next();
-                                        if inner.is_none() {
-                                            return Err("field was empty".into());
-                                        }
+    }
+    fields_types
+}
 
-                                        let inner = inner.unwrap();
-                                        match inner.as_rule() {
-                                            Rule::bool => {
-                                                let parsed = inner.as_str().to_lowercase().parse();
-                                                if let Err(e) = parsed {
-                                                    return Err(format!("{}", e));
-                                                }
-                                                value = Value::Bool(parsed.unwrap());
-                                            }
-                                            Rule::string => {
-                                                if inner.as_str().len() < 2 {
-                                                    return Err(format!(
-                                                        "string {} is invalid!",
-                                                        inner.as_str()
-                                                    ));
-                                                }
-                                                value = Value::String(
-                                                    inner.as_str()[1..inner.as_str().len() - 1]
-                                                        .to_string(),
-                                                );
-                                            }
-                                            Rule::int => {
-                                                let parsed = inner.as_str().parse();
-                                                if let Err(e) = parsed {
-                                                    return Err(format!("{}", e));
-                                                }
-                                                value = Value::Int(parsed.unwrap());
-                                            }
-                                            Rule::float => {
-                                                let parsed = inner.as_str().parse();
-                                                if let Err(e) = parsed {
-                                                    return Err(format!("{}", e));
-                                                }
-                                                value = Value::Float(parsed.unwrap());
-                                            }
-                                            _ => {}
-                                        }
-                                    }
-                                    _ => {}
-                                }
-                            }
-                            insert_values.push(InsertValue {
-                                field: field_name,
-                                value,
-                            })
-                        }
+fn parse_query_c<K: DatabaseKey>(
+    mut inner_pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, String> {
+    let mut table = "";
+    let mut key_field = "";
+    let mut fields_types = Vec::<NewField>::new();
+    for c_inner in inner_pairs {
+        match c_inner.as_rule() {
+            Rule::table => {
+                table = c_inner.as_str();
+            }
+            Rule::field => {
+                key_field = c_inner.as_str();
+            }
+            Rule::fields_types => {
+                fields_types = parse_query_field_types::<K>(c_inner);
+            }
+            _ => {}
+        }
+    }
+    Ok(Query::Create(CreateQuery {
+        table,
+        key_field,
+        fields_types,
+    }))
+}
+
+fn parse_query_field_value_bool(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+    let parsed = pair.as_str().to_lowercase().parse();
+    if let Err(e) = parsed {
+        return Some(Err(format!("{}", e)));
+    }
+    Some(Ok(QueryValue::Bool(parsed.unwrap())))
+}
+
+fn parse_query_field_value_string(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+    if pair.as_str().len() < 2 {
+        return Some(Err(format!("string {} is invalid!", pair.as_str())));
+    }
+    Some(Ok(QueryValue::String(
+        &pair.as_str()[1..pair.as_str().len() - 1],
+    )))
+}
+
+fn parse_query_field_value_int(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+    let parsed = pair.as_str().parse();
+    if let Err(e) = parsed {
+        return Some(Err(format!("{}", e)));
+    }
+    Some(Ok(QueryValue::Int(parsed.unwrap())))
+}
+
+fn parse_query_field_value_float(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+    let parsed = pair.as_str().parse();
+    if let Err(e) = parsed {
+        return Some(Err(format!("{}", e)));
+    }
+    Some(Ok(QueryValue::Float(parsed.unwrap())))
+}
+
+fn parse_query_field_value(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+    match pair.as_rule() {
+        Rule::bool => parse_query_field_value_bool(pair),
+        Rule::string => parse_query_field_value_string(pair),
+        Rule::int => parse_query_field_value_int(pair),
+        Rule::float => parse_query_field_value_float(pair),
+        _ => None,
+    }
+}
+
+fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, String> {
+    let inner_inner = pair.into_inner();
+    let mut field = "";
+    let mut value = QueryValue::String("");
+    for inner_inner in inner_inner {
+        match inner_inner.as_rule() {
+            Rule::field => {
+                field = inner_inner.as_str();
+            }
+            Rule::field_value => {
+                let inner = inner_inner.into_inner().next();
+                if inner.is_none() {
+                    return Err("field was empty".into());
+                }
+
+                let inner = inner.unwrap();
+                if let Some(inner_res) = parse_query_field_value(inner) {
+                    match inner_res {
+                        Ok(v) => value = v,
+                        Err(e) => return Err(e.to_string()),
                     }
-                    _ => {}
                 }
             }
-            Ok(Query::Insert(InsertQuery {
-                table,
-                insert_values,
-            }))
+            _ => {}
         }
-        Rule::D => {
-            let mut key: K = K::dbk_new();
-            let mut table = String::new();
-            for inner in q_inner.into_inner() {
-                match inner.as_rule() {
-                    Rule::table => {
-                        table = inner.as_str().to_string();
-                    }
-                    Rule::key_value => {
-                        key = K::gramma_from_str(inner.as_str()).unwrap();
-                    }
-                    _ => {}
-                };
+    }
+
+    Ok(InsertValue { field, value })
+}
+
+fn parse_query_i<K: DatabaseKey>(
+    mut inner_pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, String> {
+    let mut table = "";
+    let mut insert_values = Vec::<InsertValue>::new();
+    for inner in inner_pairs {
+        match inner.as_rule() {
+            Rule::table => {
+                table = inner.as_str();
             }
-            Ok(Query::Delete(DeleteQuery { key, table }))
+            Rule::field_value_setters => {
+                for inner in inner.into_inner() {
+                    let res = parse_query_field_value_setters(inner);
+                    match res {
+                        Ok(v) => insert_values.push(v),
+                        Err(e) => return Err(e.to_string()),
+                    }
+                }
+            }
+            _ => {}
         }
-        _ => Err(format!("Unexpected rule {:?}", q_inner)),
+    }
+    Ok(Query::Insert(InsertQuery {
+        table,
+        insert_values,
+    }))
+}
+
+/// Parses a query from a `Pair<Rule>` and constructs a `Query<K>` object.
+/// It is assumed that Rule is of variant Rule::D (that is pair.as_rule() returns Rule::D
+fn parse_query_d<K: DatabaseKey>(
+    mut inner_pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, String> {
+    let mut key: K = K::dbk_new();
+    let mut table = String::new();
+    for inner in inner_pairs {
+        match inner.as_rule() {
+            Rule::table => {
+                table = inner.as_str().to_string();
+            }
+            Rule::key_value => {
+                key = K::gramma_from_str(inner.as_str()).unwrap();
+            }
+            _ => {}
+        };
+    }
+    Ok(Query::Delete(DeleteQuery { key, table }))
+}
+
+/// Parse input query and translate the results into internal command representation
+pub fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
+    let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(|e| e.to_string())?;
+
+    let query_pair = pairs
+        .next()
+        .and_then(|p| p.into_inner().next())
+        .ok_or("Query was empty or invalid")?;
+
+    let query_rule = query_pair.as_rule();
+    let inner_pairs = query_pair.into_inner();
+    match query_rule {
+        Rule::S => parse_query_s(inner_pairs),
+        Rule::C => parse_query_c(inner_pairs),
+        Rule::I => parse_query_i(inner_pairs),
+        Rule::D => parse_query_d(inner_pairs),
+        rule => Err(format!("Unexpected rule {:?}", rule)),
     }
 }
 
@@ -287,7 +335,7 @@ mod tests {
     fn select_all() {
         let select = "SELECT * FROM table";
         let expected_result = Query::<String>::Select(SelectQuery {
-            table: String::from("table"),
+            table: "table",
             fields: SelectFields::AllFields(),
         });
         let result = parse_query(select).unwrap();
@@ -298,8 +346,8 @@ mod tests {
     fn select_one_field() {
         let select = "SELECT field1 FROM table";
         let expected_result = Query::<String>::Select(SelectQuery {
-            table: String::from("table"),
-            fields: SelectFields::Fields(vec![String::from("field1")]),
+            table: "table",
+            fields: SelectFields::Fields(vec!["field1"]),
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -309,12 +357,8 @@ mod tests {
     fn select_multiple_fields() {
         let select = "SELECT field1, field2, field3 FROM my_table";
         let expected_result = Query::<String>::Select(SelectQuery {
-            table: String::from("my_table"),
-            fields: SelectFields::Fields(vec![
-                String::from("field1"),
-                String::from("field2"),
-                String::from("field3"),
-            ]),
+            table: "my_table",
+            fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -324,10 +368,10 @@ mod tests {
     fn create_single_field() {
         let create_query = "CREATE users KEY id FIELDS name: STRING";
         let expected_result = Query::<String>::Create(CreateQuery {
-            table: "users".to_string(),
-            key_field: "id".to_string(),
+            table: "users",
+            key_field: "id",
             fields_types: vec![NewField {
-                field: "name".to_string(),
+                field: "name",
                 field_type: FieldType::String,
             }],
         });
@@ -339,19 +383,19 @@ mod tests {
     fn create_multiple_fields() {
         let create_query = "CREATE products KEY sku FIELDS name: STRING, price: FLOAT, stock: INT";
         let expected_result = Query::<String>::Create(CreateQuery {
-            table: "products".to_string(),
-            key_field: "sku".to_string(),
+            table: "products",
+            key_field: "sku",
             fields_types: vec![
                 NewField {
-                    field: "name".to_string(),
+                    field: "name",
                     field_type: FieldType::String,
                 },
                 NewField {
-                    field: "price".to_string(),
+                    field: "price",
                     field_type: FieldType::Float,
                 },
                 NewField {
-                    field: "stock".to_string(),
+                    field: "stock",
                     field_type: FieldType::Int,
                 },
             ],
@@ -365,23 +409,23 @@ mod tests {
         let insert_query =
             "INSERT name = 'test_user', age = 30, active = TRUE, score = 99.5 INTO users";
         let expected_result = Query::<String>::Insert(InsertQuery {
-            table: "users".to_string(),
+            table: "users",
             insert_values: vec![
                 InsertValue {
-                    field: "name".to_string(),
-                    value: Value::String("test_user".to_string()),
+                    field: "name",
+                    value: QueryValue::String("test_user"),
                 },
                 InsertValue {
-                    field: "age".to_string(),
-                    value: Value::Int(30),
+                    field: "age",
+                    value: QueryValue::Int(30),
                 },
                 InsertValue {
-                    field: "active".to_string(),
-                    value: Value::Bool(true),
+                    field: "active",
+                    value: QueryValue::Bool(true),
                 },
                 InsertValue {
-                    field: "score".to_string(),
-                    value: Value::Float(99.5),
+                    field: "score",
+                    value: QueryValue::Float(99.5),
                 },
             ],
         });
@@ -393,15 +437,15 @@ mod tests {
     fn insert_negative_numbers() {
         let insert_query = "INSERT temperature = -10.5, balance = -50 INTO readings";
         let expected_result = Query::<String>::Insert(InsertQuery {
-            table: "readings".to_string(),
+            table: "readings",
             insert_values: vec![
                 InsertValue {
-                    field: "temperature".to_string(),
-                    value: Value::Float(-10.5),
+                    field: "temperature",
+                    value: QueryValue::Float(-10.5),
                 },
                 InsertValue {
-                    field: "balance".to_string(),
-                    value: Value::Int(-50),
+                    field: "balance",
+                    value: QueryValue::Int(-50),
                 },
             ],
         });

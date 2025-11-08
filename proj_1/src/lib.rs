@@ -6,11 +6,52 @@ use crate::AnyDatabase::{IntDatabase, StringDatabase};
 pub use parsing::*;
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum QueryValue<'a> {
+    Bool(bool),
+    String(&'a str),
+    Int(i64),
+    Float(f64),
+}
+
+impl QueryValue<'_> {
+    fn field_type(&self) -> FieldType {
+        match self {
+            QueryValue::Bool(_) => FieldType::Bool,
+            QueryValue::String(_) => FieldType::String,
+            QueryValue::Int(_) => FieldType::Int,
+            QueryValue::Float(_) => FieldType::Float,
+        }
+    }
+}
+
+impl<'a> From<&'a Value> for QueryValue<'a> {
+    fn from(value: &'a Value) -> Self {
+        match value {
+            Value::Bool(v) => QueryValue::Bool(*v),
+            Value::String(v) => QueryValue::String(v.as_str()),
+            Value::Int(v) => QueryValue::Int(*v),
+            Value::Float(v) => QueryValue::Float(*v),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     Bool(bool),
     String(String),
     Int(i64),
     Float(f64),
+}
+
+impl From<&QueryValue<'_>> for Value {
+    fn from(value: &QueryValue) -> Self {
+        match value {
+            QueryValue::Bool(v) => Value::Bool(*v),
+            QueryValue::String(v) => Value::String((*v).to_owned()),
+            QueryValue::Int(v) => Value::Int(*v),
+            QueryValue::Float(v) => Value::Float(*v),
+        }
+    }
 }
 
 impl Value {
@@ -25,8 +66,37 @@ impl Value {
 }
 
 #[derive(Debug, Clone)]
+struct QueryRecord<'a> {
+    values: HashMap<&'a str, QueryValue<'a>>,
+}
+
+#[derive(Debug, Clone)]
 struct Record {
     values: HashMap<String, Value>,
+}
+
+impl<'a> From<&'a Record> for QueryRecord<'a> {
+    fn from(value: &'a Record) -> Self {
+        QueryRecord {
+            values: value
+                .values
+                .iter()
+                .map(|v| (v.0.as_str(), v.1.into()))
+                .collect(),
+        }
+    }
+}
+
+impl From<&QueryRecord<'_>> for Record {
+    fn from(value: &QueryRecord) -> Self {
+        Record {
+            values: value
+                .values
+                .iter()
+                .map(|v| ((*v.0).to_owned(), v.1.into()))
+                .collect(),
+        }
+    }
 }
 
 pub struct Database<K: DatabaseKey> {
@@ -54,9 +124,9 @@ pub struct Table<K: DatabaseKey> {
 }
 
 #[derive(Debug)]
-pub enum AnyQuery {
-    StringQuery(Query<String>),
-    IntQuery(Query<i64>),
+pub enum AnyQuery<'a> {
+    StringQuery(Query<'a, String>),
+    IntQuery(Query<'a, i64>),
 }
 
 pub enum AnyDatabase {
@@ -73,21 +143,21 @@ impl AnyDatabase {
         IntDatabase(Database::new())
     }
 
-    fn execute_string(&mut self, query: Query<String>) -> Result<QueryResult, String> {
+    fn execute_string(&'_ mut self, query: Query<String>) -> Result<QueryResult<'_>, String> {
         match self {
             &mut StringDatabase(ref mut db) => db.execute(query),
             _ => Err("Query type no valid for this database type".to_string()),
         }
     }
 
-    fn execute_i64(&mut self, query: Query<i64>) -> Result<QueryResult, String> {
+    fn execute_i64(&mut self, query: Query<i64>) -> Result<QueryResult<'_>, String> {
         match self {
             &mut IntDatabase(ref mut db) => db.execute(query),
             _ => Err("Query type no valid for this database type".to_string()),
         }
     }
 
-    pub fn execute(&mut self, query: AnyQuery) -> Result<QueryResult, String> {
+    pub fn execute(&mut self, query: AnyQuery) -> Result<QueryResult<'_>, String> {
         match query {
             AnyQuery::StringQuery(query) => self.execute_string(query),
             AnyQuery::IntQuery(query) => self.execute_i64(query),
@@ -96,8 +166,8 @@ impl AnyDatabase {
 }
 
 #[derive(Debug)]
-pub struct SelectResult {
-    records: Vec<Record>,
+pub struct SelectResult<'a> {
+    records: Vec<QueryRecord<'a>>,
 }
 
 #[derive(Debug)]
@@ -114,15 +184,15 @@ pub struct InsertResult {
 }
 
 #[derive(Debug)]
-pub enum QueryResult {
-    Select(SelectResult),
+pub enum QueryResult<'a> {
+    Select(SelectResult<'a>),
     Create(CreateResult),
     Delete(DeleteResult),
     Insert(InsertResult),
 }
 
 impl<K: DatabaseKey> Database<K> {
-    fn execute(&mut self, query: Query<K>) -> Result<QueryResult, String> {
+    fn execute(&mut self, query: Query<K>) -> Result<QueryResult<'_>, String> {
         match query {
             Query::Select(select) => Ok(QueryResult::Select(self.execute_select(select)?)),
             Query::Create(create) => Ok(QueryResult::Create(self.execute_create(create)?)),
@@ -131,28 +201,28 @@ impl<K: DatabaseKey> Database<K> {
         }
     }
 
-    fn execute_select(&self, select: SelectQuery) -> Result<SelectResult, String> {
-        let table = self.tables.get(&select.table);
+    fn execute_select(&self, select: SelectQuery) -> Result<SelectResult<'_>, String> {
+        let table = self.tables.get(select.table);
         if table.is_none() {
             return Err(format!("table: {} not found", select.table));
         };
 
         let table = table.unwrap();
-        let result: Vec<Record> = match select.fields {
-            SelectFields::AllFields() => table.records.iter().map(|p| (*p.1).clone()).collect(),
+        let result: Vec<QueryRecord> = match select.fields {
+            SelectFields::AllFields() => table.records.iter().map(|p| p.1.into()).collect(),
             SelectFields::Fields(v) => table
                 .records
                 .iter()
                 .map(|p| {
                     (
                         p.0,
-                        Record {
+                        QueryRecord {
                             values: p
                                 .1
                                 .values
                                 .iter()
-                                .filter(|r| v.contains(r.0))
-                                .map(|r| ((*r.0).clone(), (*r.1).clone()))
+                                .filter(|r| v.contains(&r.0.as_str()))
+                                .map(|r| (r.0.as_str(), r.1.into()))
                                 .collect(),
                         },
                     )
@@ -164,7 +234,7 @@ impl<K: DatabaseKey> Database<K> {
     }
 
     fn execute_create(&mut self, create: CreateQuery) -> Result<CreateResult, String> {
-        let table = self.tables.get(&create.table);
+        let table = self.tables.get(create.table);
         if table.is_some() {
             return Err(format!("table: {} already exists", create.table));
         }
@@ -172,20 +242,20 @@ impl<K: DatabaseKey> Database<K> {
         let mut field_types: HashMap<String, FieldType> = create
             .fields_types
             .iter()
-            .map(|e| (e.field.clone(), e.field_type))
+            .map(|e| (e.field.to_owned(), e.field_type))
             .collect();
-        field_types.insert(create.key_field.clone(), K::field_type());
+        field_types.insert(create.key_field.to_owned(), K::field_type());
         let new_table = Table {
-            key_field: create.key_field,
+            key_field: create.key_field.to_owned(),
             types: field_types,
             records: std::collections::BTreeMap::new(),
         };
-        self.tables.insert(create.table, new_table);
+        self.tables.insert(create.table.to_owned(), new_table);
         Ok(CreateResult {})
     }
 
     fn execute_insert(&mut self, insert: InsertQuery) -> Result<InsertResult, String> {
-        let table = self.tables.get_mut(&insert.table);
+        let table = self.tables.get_mut(insert.table);
         if table.is_none() {
             return Err(format!("table: {} not found", insert.table));
         }
@@ -195,15 +265,12 @@ impl<K: DatabaseKey> Database<K> {
         let non_existent: Vec<&InsertValue> = insert
             .insert_values
             .iter()
-            .filter(|p| !table.types.contains_key(&p.field))
+            .filter(|p| !table.types.contains_key(p.field))
             .collect();
         if !non_existent.is_empty() {
             return Err(format!(
                 "fields: {:?} do not exists in table: {}",
-                non_existent
-                    .iter()
-                    .map(|f| f.field.as_str())
-                    .collect::<Vec<&str>>(),
+                non_existent.iter().map(|f| f.field).collect::<Vec<&str>>(),
                 insert.table
             ));
         }
@@ -214,7 +281,7 @@ impl<K: DatabaseKey> Database<K> {
         number_of_occurrences.insert(&table.key_field, 0);
 
         insert.insert_values.iter().for_each(|p| {
-            let f = number_of_occurrences.get_mut(p.field.as_str());
+            let f = number_of_occurrences.get_mut(p.field);
             if f.is_none() {
                 return;
             }
@@ -249,7 +316,7 @@ impl<K: DatabaseKey> Database<K> {
         let non_matching_types: Vec<&InsertValue> = insert
             .insert_values
             .iter()
-            .filter(|p| p.value.field_type() != *table.types.get(&p.field).unwrap())
+            .filter(|p| p.value.field_type() != *table.types.get(p.field).unwrap())
             .collect();
         if !non_matching_types.is_empty() {
             return Err(format!(
@@ -262,7 +329,7 @@ impl<K: DatabaseKey> Database<K> {
             .insert_values
             .iter()
             .filter(|p| p.field != table.key_field)
-            .map(|p| (p.field.clone(), p.value.clone()))
+            .map(|p| (p.field.to_owned(), (&p.value).into()))
             .collect();
         let key = insert
             .insert_values
@@ -307,9 +374,9 @@ impl<K: DatabaseKey> Database<K> {
 }
 
 impl DatabaseKey for String {
-    fn get_value(value: Value) -> Option<Self> {
+    fn get_value(value: QueryValue) -> Option<Self> {
         match value {
-            Value::String(s) => Some(s),
+            QueryValue::String(s) => Some(s.to_owned()),
             _ => None,
         }
     }
@@ -321,6 +388,7 @@ impl DatabaseKey for String {
     fn dbk_new() -> Self {
         String::new()
     }
+
     fn is_equal_to(&self, other: &Self) -> bool {
         self == other
     }
@@ -334,9 +402,9 @@ impl DatabaseKey for String {
 }
 
 impl DatabaseKey for i64 {
-    fn get_value(value: Value) -> Option<Self> {
+    fn get_value(value: QueryValue) -> Option<Self> {
         match value {
-            Value::Int(i) => Some(i),
+            QueryValue::Int(i) => Some(i),
             _ => None,
         }
     }
@@ -348,9 +416,11 @@ impl DatabaseKey for i64 {
     fn dbk_new() -> i64 {
         0
     }
+
     fn is_equal_to(&self, other: &Self) -> bool {
         self == other
     }
+
     fn gramma_from_str(str: &str) -> Option<Self> {
         str.parse::<i64>().ok()
     }
@@ -362,7 +432,7 @@ where
     Self: Ord,
     Self: std::fmt::Display,
 {
-    fn get_value(value: Value) -> Option<Self>;
+    fn get_value(value: QueryValue) -> Option<Self>;
     fn field_type() -> FieldType;
     fn dbk_new() -> Self;
     fn is_equal_to(&self, other: &Self) -> bool;
