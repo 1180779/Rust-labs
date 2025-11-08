@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use proj_1::{AnyCommand, AnyDatabase, parse_command, Command};
+use proj_1::{AnyCommand, AnyDatabase, Command, parse_command};
 use std::io;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -52,5 +52,7 @@ fn main() {
         println!("Execution result: {:?}", result);
         println!("--------------------------");
         println!();
+        let query_owned = command.query().into();
+        db.history_push(query_owned);
     }
 }

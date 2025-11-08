@@ -1,4 +1,4 @@
-Q = { S | C | I | D }
+Q = { S | C | I | D | SA | RF }
 
 // types
 float = { "-"? ~ value ~ "." ~ value? }
@@ -20,11 +20,15 @@ field_value_setters = { ( field_value_setter ~ whitespace* ~ "," ~ whitespace* )
 
 key_value = { int | string }
 
-field_value_setter = { field ~ whitespace+ ~ "=" ~ whitespace+ ~ field_value }
+field_value_setter = { field ~ whitespace* ~ "=" ~ whitespace* ~ field_value }
 field_type = { field ~ whitespace*~ ":" ~ whitespace* ~ ftype }
 field = { ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
 table = { ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
 
+file_path = { ("/" | "\\" | ASCII_ALPHANUMERIC | "-" | "." | "_" | ":" | " ")+ }
+
+SAVE_AS = _{ ^"SAVE_AS" }
+READ_FROM = _{ ^"READ_FROM" }
 SELECT = _{ ^"SELECT" }
 CREATE = _{ ^"CREATE" }
 DELETE = _{ ^"DELETE" }
@@ -39,3 +43,5 @@ S = { SELECT ~ whitespace+ ~ (fields | fields_all) ~ whitespace+ ~ FROM ~ whites
 C = { CREATE ~ whitespace+ ~ table ~ whitespace+ ~ KEY ~ whitespace+ ~ field ~ whitespace+ ~ FIELDS ~ whitespace+ ~ fields_types }
 I = { INSERT ~ whitespace+ ~ field_value_setters ~ whitespace+ ~ INTO ~ whitespace+ ~ table }
 D = { DELETE ~ whitespace+ ~ key_value ~ whitespace+ ~ FROM ~ whitespace+ ~ table }
+SA = { SAVE_AS ~ whitespace+ ~ file_path }
+RF = { READ_FROM ~ whitespace+ ~ file_path }
