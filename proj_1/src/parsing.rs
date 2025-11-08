@@ -7,12 +7,12 @@ use pest_derive::Parser;
 
 #[derive(Parser)]
 #[grammar = "gramma.pest"]
-pub struct GrammaParser;
+struct GrammaParser;
 
 #[derive(Debug, PartialEq)]
 pub enum Query<'a, K: DatabaseKey> {
     Create(CreateQuery<'a>),
-    Delete(DeleteQuery<K>),
+    Delete(DeleteQuery<'a, K>),
     Insert(InsertQuery<'a>),
     Select(SelectQuery<'a>),
 }
@@ -20,7 +20,7 @@ pub enum Query<'a, K: DatabaseKey> {
 #[derive(Debug, PartialEq)]
 pub struct InsertValue<'a> {
     pub field: &'a str,
-    pub value: QueryValue<'a>,
+    pub value: CommandValue<'a>,
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -44,12 +44,6 @@ impl FieldType {
     }
 }
 
-pub struct CreateField {
-    table: String,
-    field: String,
-    field_type: FieldType,
-}
-
 #[derive(Debug, PartialEq)]
 pub struct InsertQuery<'a> {
     pub insert_values: Vec<InsertValue<'a>>,
@@ -57,9 +51,9 @@ pub struct InsertQuery<'a> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct DeleteQuery<K: DatabaseKey> {
+pub struct DeleteQuery<'a, K: DatabaseKey> {
     pub key: K,
-    pub table: String,
+    pub table: &'a str,
 }
 
 #[derive(Debug, PartialEq)]
@@ -87,8 +81,14 @@ pub enum SelectFields<'a> {
     AllFields(),
 }
 
+impl<'a> Default for SelectFields<'a> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> SelectFields<'a> {
-    pub fn from(v: Vec<&str>) -> SelectFields {
+    pub fn from(v: Vec<&str>) -> SelectFields<'_> {
         SelectFields::Fields(v)
     }
 
@@ -101,29 +101,29 @@ impl<'a> SelectFields<'a> {
     }
 }
 
-fn parse_query_field(pair: Pair<Rule>) -> &str {
+fn parse_query_field(pair: Pair<'_, Rule>) -> &str {
     pair.as_str()
 }
 
-fn parse_query_fields(pairs: pest::iterators::Pairs<Rule>) -> Vec<&str> {
+fn parse_query_fields(pairs: pest::iterators::Pairs<'_, Rule>) -> Vec<&str> {
     pairs.map(|pair| parse_query_field(pair)).collect()
 }
 
 fn parse_query_s<K: DatabaseKey>(
-    inner_pairs: pest::iterators::Pairs<Rule>,
+    pairs: pest::iterators::Pairs<Rule>,
 ) -> Result<Query<K>, String> {
     let mut fields = SelectFields::new();
     let mut table = "";
-    for s_inner in inner_pairs {
-        match s_inner.as_rule() {
+    for inner in pairs {
+        match inner.as_rule() {
             Rule::fields => {
-                fields = SelectFields::from(parse_query_fields(s_inner.into_inner()));
+                fields = SelectFields::from(parse_query_fields(inner.into_inner()));
             }
             Rule::fields_all => {
                 fields = SelectFields::AllFields();
             }
             Rule::table => {
-                table = s_inner.as_str();
+                table = inner.as_str();
             }
             Rule::where_clause => {
                 // TODO: implement
@@ -134,7 +134,7 @@ fn parse_query_s<K: DatabaseKey>(
     Ok(Query::Select(SelectQuery { fields, table }))
 }
 
-fn parse_query_field_types<K: DatabaseKey>(pair: Pair<Rule>) -> Vec<NewField> {
+fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
     let mut fields_types = Vec::<NewField>::new();
     for inner in pair.into_inner() {
         if inner.as_rule() == Rule::field_type {
@@ -160,21 +160,21 @@ fn parse_query_field_types<K: DatabaseKey>(pair: Pair<Rule>) -> Vec<NewField> {
 }
 
 fn parse_query_c<K: DatabaseKey>(
-    mut inner_pairs: pest::iterators::Pairs<Rule>,
+    pairs: pest::iterators::Pairs<Rule>,
 ) -> Result<Query<K>, String> {
     let mut table = "";
     let mut key_field = "";
     let mut fields_types = Vec::<NewField>::new();
-    for c_inner in inner_pairs {
-        match c_inner.as_rule() {
+    for inner in pairs {
+        match inner.as_rule() {
             Rule::table => {
-                table = c_inner.as_str();
+                table = inner.as_str();
             }
             Rule::field => {
-                key_field = c_inner.as_str();
+                key_field = inner.as_str();
             }
             Rule::fields_types => {
-                fields_types = parse_query_field_types::<K>(c_inner);
+                fields_types = parse_query_field_types(inner);
             }
             _ => {}
         }
@@ -186,40 +186,40 @@ fn parse_query_c<K: DatabaseKey>(
     }))
 }
 
-fn parse_query_field_value_bool(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+fn parse_query_field_value_bool(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
     let parsed = pair.as_str().to_lowercase().parse();
     if let Err(e) = parsed {
         return Some(Err(format!("{}", e)));
     }
-    Some(Ok(QueryValue::Bool(parsed.unwrap())))
+    Some(Ok(CommandValue::Bool(parsed.unwrap())))
 }
 
-fn parse_query_field_value_string(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+fn parse_query_field_value_string(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
     if pair.as_str().len() < 2 {
         return Some(Err(format!("string {} is invalid!", pair.as_str())));
     }
-    Some(Ok(QueryValue::String(
+    Some(Ok(CommandValue::String(
         &pair.as_str()[1..pair.as_str().len() - 1],
     )))
 }
 
-fn parse_query_field_value_int(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+fn parse_query_field_value_int(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
     let parsed = pair.as_str().parse();
     if let Err(e) = parsed {
         return Some(Err(format!("{}", e)));
     }
-    Some(Ok(QueryValue::Int(parsed.unwrap())))
+    Some(Ok(CommandValue::Int(parsed.unwrap())))
 }
 
-fn parse_query_field_value_float(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+fn parse_query_field_value_float(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
     let parsed = pair.as_str().parse();
     if let Err(e) = parsed {
         return Some(Err(format!("{}", e)));
     }
-    Some(Ok(QueryValue::Float(parsed.unwrap())))
+    Some(Ok(CommandValue::Float(parsed.unwrap())))
 }
 
-fn parse_query_field_value(pair: Pair<Rule>) -> Option<Result<QueryValue, String>> {
+fn parse_query_field_value(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
     match pair.as_rule() {
         Rule::bool => parse_query_field_value_bool(pair),
         Rule::string => parse_query_field_value_string(pair),
@@ -232,7 +232,7 @@ fn parse_query_field_value(pair: Pair<Rule>) -> Option<Result<QueryValue, String
 fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, String> {
     let inner_inner = pair.into_inner();
     let mut field = "";
-    let mut value = QueryValue::String("");
+    let mut value = CommandValue::String("");
     for inner_inner in inner_inner {
         match inner_inner.as_rule() {
             Rule::field => {
@@ -260,11 +260,11 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Stri
 }
 
 fn parse_query_i<K: DatabaseKey>(
-    mut inner_pairs: pest::iterators::Pairs<Rule>,
+    pairs: pest::iterators::Pairs<Rule>,
 ) -> Result<Query<K>, String> {
     let mut table = "";
     let mut insert_values = Vec::<InsertValue>::new();
-    for inner in inner_pairs {
+    for inner in pairs {
         match inner.as_rule() {
             Rule::table => {
                 table = inner.as_str();
@@ -290,14 +290,14 @@ fn parse_query_i<K: DatabaseKey>(
 /// Parses a query from a `Pair<Rule>` and constructs a `Query<K>` object.
 /// It is assumed that Rule is of variant Rule::D (that is pair.as_rule() returns Rule::D
 fn parse_query_d<K: DatabaseKey>(
-    mut inner_pairs: pest::iterators::Pairs<Rule>,
+    pairs: pest::iterators::Pairs<Rule>,
 ) -> Result<Query<K>, String> {
     let mut key: K = K::dbk_new();
-    let mut table = String::new();
-    for inner in inner_pairs {
+    let mut table = "";
+    for inner in pairs {
         match inner.as_rule() {
             Rule::table => {
-                table = inner.as_str().to_string();
+                table = inner.as_str();
             }
             Rule::key_value => {
                 key = K::gramma_from_str(inner.as_str()).unwrap();
@@ -309,7 +309,7 @@ fn parse_query_d<K: DatabaseKey>(
 }
 
 /// Parse input query and translate the results into internal command representation
-pub fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<K>, String> {
+pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, String> {
     let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(|e| e.to_string())?;
 
     let query_pair = pairs
@@ -413,19 +413,19 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "name",
-                    value: QueryValue::String("test_user"),
+                    value: CommandValue::String("test_user"),
                 },
                 InsertValue {
                     field: "age",
-                    value: QueryValue::Int(30),
+                    value: CommandValue::Int(30),
                 },
                 InsertValue {
                     field: "active",
-                    value: QueryValue::Bool(true),
+                    value: CommandValue::Bool(true),
                 },
                 InsertValue {
                     field: "score",
-                    value: QueryValue::Float(99.5),
+                    value: CommandValue::Float(99.5),
                 },
             ],
         });
@@ -441,11 +441,11 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "temperature",
-                    value: QueryValue::Float(-10.5),
+                    value: CommandValue::Float(-10.5),
                 },
                 InsertValue {
                     field: "balance",
-                    value: QueryValue::Int(-50),
+                    value: CommandValue::Int(-50),
                 },
             ],
         });
@@ -458,7 +458,7 @@ mod tests {
         let delete_query = "DELETE 'user-123-abc' FROM users";
         let expected_result = Query::<String>::Delete(DeleteQuery {
             key: "user-123-abc".to_string(),
-            table: "users".to_string(),
+            table: "users",
         });
         let result = parse_query::<String>(delete_query).unwrap();
         assert_eq!(result, expected_result);
@@ -469,7 +469,7 @@ mod tests {
         let delete_query = "DELETE 42 FROM products";
         let expected_result = Query::<i64>::Delete(DeleteQuery {
             key: 42,
-            table: "products".to_string(),
+            table: "products",
         });
         let result = parse_query::<i64>(delete_query).unwrap();
         assert_eq!(result, expected_result);

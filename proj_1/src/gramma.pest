@@ -2,7 +2,7 @@ Q = { S | C | I | D }
 
 // types
 float = { "-"? ~ value ~ "." ~ value? }
-string = { "'" ~ (ASCII_ALPHANUMERIC | "_" | "-")+ ~ "'" }
+string = { "'" ~ (ASCII_ALPHANUMERIC | "_" | "-" | " ")+ ~ "'" }
 int = { "-"? ~ value }
 bool = { ^"TRUE" | ^"FALSE" }
 

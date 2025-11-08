@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use proj_1::{AnyDatabase, AnyQuery, parse_query};
+use proj_1::{AnyCommand, AnyDatabase, parse_command, Command};
 use std::io;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -38,28 +38,17 @@ fn main() {
             break;
         }
 
-        let query: AnyQuery = match args.key_type {
-            KeyType::String => {
-                let parse_res = parse_query::<String>(&line);
-                if parse_res.is_err() {
-                    let e = parse_res.err().unwrap();
-                    println!("Failed to parse query: {:?}", e);
-                    continue;
-                }
-                AnyQuery::StringQuery(parse_res.unwrap())
-            }
-            KeyType::Int => {
-                let parse_res = parse_query::<i64>(&line);
-                if parse_res.is_err() {
-                    let e = parse_res.err().unwrap();
-                    println!("Failed to parse query: {:?}", e);
-                    continue;
-                }
-                AnyQuery::IntQuery(parse_res.unwrap())
+        let parse_res = parse_command(&mut db, &line);
+        let mut command: AnyCommand = match parse_res {
+            Ok(command) => command,
+            Err(e) => {
+                println!("Failed to parse command: {:?}", e);
+                continue;
             }
         };
-        println!("Parsed query: {:?}", query);
-        let result = db.execute(query);
+
+        println!("Parsed command: {:?}", command);
+        let result = command.execute();
         println!("Execution result: {:?}", result);
         println!("--------------------------");
         println!();
