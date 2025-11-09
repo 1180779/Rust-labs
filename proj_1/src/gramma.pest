@@ -6,8 +6,8 @@ string = { "'" ~ (ASCII_ALPHANUMERIC | "_" | "-" | " ")+ ~ "'" }
 int = { "-"? ~ value }
 bool = { ^"TRUE" | ^"FALSE" }
 
-where_clause = { WHERE ~ field ~ op ~ value }
-op = { "=" | "!+" | ">=" | "<=" | ">" | "<" }
+where_clause = { WHERE ~ whitespace+ ~ field ~ whitespace+ ~ op ~ whitespace+ ~ field_value }
+op = { "=" | "!=" | ">=" | "<=" | ">" | "<" }
 value = { ASCII_DIGIT+ }
 ftype = { ^"BOOL" | ^"STRING" | ^"INT" | ^"FLOAT" }
 whitespace = _{ (" " | "\t" | "\n") }
@@ -39,7 +39,7 @@ FROM = _{ ^"FROM" }
 WHERE = _{ ^"WHERE" }
 KEY = _{ ^"KEY" }
 
-S = { SELECT ~ whitespace+ ~ (fields | fields_all) ~ whitespace+ ~ FROM ~ whitespace+ ~ table ~ where_clause? }
+S = { SELECT ~ whitespace+ ~ (fields | fields_all) ~ whitespace+ ~ FROM ~ whitespace+ ~ table ~ (whitespace+ ~ where_clause)? }
 C = { CREATE ~ whitespace+ ~ table ~ whitespace+ ~ KEY ~ whitespace+ ~ field ~ whitespace+ ~ FIELDS ~ whitespace+ ~ fields_types }
 I = { INSERT ~ whitespace+ ~ field_value_setters ~ whitespace+ ~ INTO ~ whitespace+ ~ table }
 D = { DELETE ~ whitespace+ ~ key_value ~ whitespace+ ~ FROM ~ whitespace+ ~ table }

@@ -1077,6 +1077,7 @@ mod tests {
         let select_query = SelectQuery {
             table: "users",
             fields: SelectFields::AllFields(),
+            where_clause: None
         };
         let mut select_command = SelectCommand {
             table: db.tables.get("users").unwrap(),
@@ -1099,6 +1100,7 @@ mod tests {
         let select_query = SelectQuery {
             table: "users",
             fields: SelectFields::Fields(vec!["name", "age"]),
+            where_clause: None
         };
         let mut select_command = SelectCommand {
             table: db.tables.get("users").unwrap(),

@@ -10,6 +10,23 @@ use pest_derive::Parser;
 struct GrammaParser;
 
 #[derive(Debug, PartialEq)]
+pub enum Op {
+    Eq,
+    Neq,
+    Greater,
+    GreaterEq,
+    Less,
+    LessEq,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Where<'a> {
+    pub field: &'a str,
+    pub op: Op,
+    pub value: CommandValue<'a>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Query<'a, K: DatabaseKey> {
     Create(CreateQuery<'a>),
     Delete(DeleteQuery<'a, K>),
@@ -111,6 +128,7 @@ pub struct CreateQuery<'a> {
 pub struct SelectQuery<'a> {
     pub fields: SelectFields<'a>,
     pub table: &'a str,
+    pub where_clause: Option<Where<'a>>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -157,9 +175,49 @@ fn parse_query_fields(pairs: pest::iterators::Pairs<'_, Rule>) -> Vec<&str> {
     pairs.map(|pair| parse_query_field(pair)).collect()
 }
 
+fn parse_query_op(pair: Pair<'_, Rule>) -> Option<Op> {
+    match pair.as_str() {
+        "=" => Some(Op::Eq),
+        "!=" => Some(Op::Neq),
+        ">=" => Some(Op::GreaterEq),
+        "<=" => Some(Op::LessEq),
+        ">" => Some(Op::Greater),
+        "<" => Some(Op::Less),
+        _ => None,
+    }
+}
+
+fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_>, String> {
+    let mut field = "";
+    let mut op: Op = Op::Eq;
+    let mut value: CommandValue = CommandValue::Int(0);
+
+    for inner in pairs {
+        match inner.as_rule() {
+            Rule::field => {
+                field = parse_query_field(inner);
+            }
+            Rule::op => {
+                let parsed_op = parse_query_op(inner);
+                if let Some(parsed_op) = parsed_op {
+                    op = parsed_op;
+                }
+            }
+            Rule::field_value => {
+                if let Some(parsed_value) = parse_query_field_value(inner.into_inner()) {
+                    value = parsed_value?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(Where { field, op, value })
+}
+
 fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
     let mut fields = SelectFields::new();
     let mut table = "";
+    let mut where_clause = None;
     for inner in pairs {
         match inner.as_rule() {
             Rule::fields => {
@@ -171,13 +229,15 @@ fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
             Rule::table => {
                 table = inner.as_str();
             }
-            Rule::where_clause => {
-                // TODO: implement
-            }
+            Rule::where_clause => where_clause = Some(parse_query_where(inner.into_inner())?),
             _ => {}
         }
     }
-    Ok(Query::Select(SelectQuery { fields, table }))
+    Ok(Query::Select(SelectQuery {
+        fields,
+        table,
+        where_clause,
+    }))
 }
 
 fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
@@ -263,14 +323,21 @@ fn parse_query_field_value_float(pair: Pair<Rule>) -> Option<Result<CommandValue
     Some(Ok(CommandValue::Float(parsed.unwrap())))
 }
 
-fn parse_query_field_value(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
-    match pair.as_rule() {
-        Rule::bool => parse_query_field_value_bool(pair),
-        Rule::string => parse_query_field_value_string(pair),
-        Rule::int => parse_query_field_value_int(pair),
-        Rule::float => parse_query_field_value_float(pair),
-        _ => None,
-    }
+fn parse_query_field_value(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Option<Result<CommandValue, String>> {
+    let empty_err = || Some(Err("field empty".to_string()));
+
+    pairs
+        .into_iter()
+        .next()
+        .map_or_else(empty_err, |inner| match inner.as_rule() {
+            Rule::bool => parse_query_field_value_bool(inner),
+            Rule::string => parse_query_field_value_string(inner),
+            Rule::int => parse_query_field_value_int(inner),
+            Rule::float => parse_query_field_value_float(inner),
+            _ => empty_err(),
+        })
 }
 
 fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, String> {
@@ -283,17 +350,8 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Stri
                 field = inner_inner.as_str();
             }
             Rule::field_value => {
-                let inner = inner_inner.into_inner().next();
-                if inner.is_none() {
-                    return Err("field was empty".into());
-                }
-
-                let inner = inner.unwrap();
-                if let Some(inner_res) = parse_query_field_value(inner) {
-                    match inner_res {
-                        Ok(v) => value = v,
-                        Err(e) => return Err(e.to_string()),
-                    }
+                if let Some(inner_res) = parse_query_field_value(inner_inner.into_inner()) {
+                    value = inner_res?;
                 }
             }
             _ => {}
@@ -399,6 +457,23 @@ mod tests {
         let expected_result = Query::<String>::Select(SelectQuery {
             table: "table",
             fields: SelectFields::AllFields(),
+            where_clause: None,
+        });
+        let result = parse_query(select).unwrap();
+        assert_eq!(result, expected_result);
+    }
+
+    #[test]
+    fn select_all_where() {
+        let select = "SELECT * FROM table WHERE avg_rating > 4.5";
+        let expected_result = Query::<String>::Select(SelectQuery {
+            table: "table",
+            fields: SelectFields::AllFields(),
+            where_clause: Some(Where {
+                field: "avg_rating",
+                op: Op::Greater,
+                value: CommandValue::Float(4.5),
+            }),
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -410,6 +485,23 @@ mod tests {
         let expected_result = Query::<String>::Select(SelectQuery {
             table: "table",
             fields: SelectFields::Fields(vec!["field1"]),
+            where_clause: None,
+        });
+        let result = parse_query(select).unwrap();
+        assert_eq!(result, expected_result);
+    }
+
+    #[test]
+    fn select_one_field_where() {
+        let select = "SELECT field1 FROM table WHERE id <= 10";
+        let expected_result = Query::<String>::Select(SelectQuery {
+            table: "table",
+            fields: SelectFields::Fields(vec!["field1"]),
+            where_clause: Some(Where {
+                field: "id",
+                op: Op::LessEq,
+                value: CommandValue::Int(10),
+            }),
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -421,6 +513,7 @@ mod tests {
         let expected_result = Query::<String>::Select(SelectQuery {
             table: "my_table",
             fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
+            where_clause: None,
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
