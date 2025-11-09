@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use proj_1::{AnyCommand, AnyDatabase, Command, parse_command};
+use proj_1::{AnyCommand, AnyDatabase, Command, CommandResult, parse_command};
 use std::io;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -23,7 +23,7 @@ fn main() {
         KeyType::Int => AnyDatabase::new_int_database(),
     };
 
-    println!("Empty query ends");
+    println!("enter QUIT to shut down");
     loop {
         line.clear();
         let line_res = io::stdin().read_line(&mut line);
@@ -32,13 +32,16 @@ fn main() {
             continue;
         }
 
-        let line_res = line_res.unwrap();
-        if line_res == 0 {
+        let line = line.trim();
+        if line == "QUIT" {
             println!("Shutting down...");
             break;
         }
+        if line.is_empty() {
+            continue;
+        }
 
-        let parse_res = parse_command(&mut db, &line);
+        let parse_res = parse_command(&mut db, line);
         let mut command: AnyCommand = match parse_res {
             Ok(command) => command,
             Err(e) => {
@@ -47,12 +50,20 @@ fn main() {
             }
         };
 
-        println!("Parsed command: {:?}", command);
         let result = command.execute();
-        println!("Execution result: {:?}", result);
-        println!("--------------------------");
-        println!();
-        let query_owned = command.query().into();
-        db.history_push(query_owned);
+        match result {
+            Ok(res) => {
+                println!("{}", res);
+                let query = (&command.query()).into();
+                let res = db.history_push(query);
+                if let Err(e) = res {
+                    println!("Failed to push query: {:?}", e);
+                }
+            }
+            Err(e) => {
+                println!("Failed to execute command: {:?}", e);
+                continue;
+            }
+        }
     }
 }

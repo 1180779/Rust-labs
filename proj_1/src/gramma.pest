@@ -2,13 +2,14 @@ Q = { S | C | I | D | SA | RF }
 
 // types
 float = { "-"? ~ value ~ "." ~ value? }
-string = { "'" ~ (ASCII_ALPHANUMERIC | "_" | "-" | " ")+ ~ "'" }
+string = { "'" ~ string_body+ ~ "'" | "\"" ~ string_body ~ "\"" }
+string_body = { (LETTER | MARK | NUMBER | OTHER | ":" | "_" | "-" | " ")+ }
 int = { "-"? ~ value }
 bool = { ^"TRUE" | ^"FALSE" }
 
 where_clause = { WHERE ~ whitespace+ ~ field ~ whitespace+ ~ op ~ whitespace+ ~ field_value }
 op = { "=" | "!=" | ">=" | "<=" | ">" | "<" }
-value = { ASCII_DIGIT+ }
+value = { NUMBER+ }
 ftype = { ^"BOOL" | ^"STRING" | ^"INT" | ^"FLOAT" }
 whitespace = _{ (" " | "\t" | "\n") }
 field_value = { float | int | bool | string }
@@ -25,7 +26,7 @@ field_type = { field ~ whitespace*~ ":" ~ whitespace* ~ ftype }
 field = { ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
 table = { ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_" | "-")* }
 
-file_path = { ("/" | "\\" | ASCII_ALPHANUMERIC | "-" | "." | "_" | ":" | " ")+ }
+file_path = { ("/" | "\\" | LETTER | SYMBOL | NUMBER | "-" | "." | "_" | ":" )+ }
 
 SAVE_AS = _{ ^"SAVE_AS" }
 READ_FROM = _{ ^"READ_FROM" }

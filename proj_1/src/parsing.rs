@@ -1,8 +1,8 @@
-use std::cmp::PartialEq;
 use super::*;
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
+use std::cmp::PartialEq;
 
 // TODO: change .pest to be ascii independent
 
@@ -10,7 +10,7 @@ use pest_derive::Parser;
 #[grammar = "gramma.pest"]
 struct GrammaParser;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Op {
     Eq,
     Neq,
@@ -20,11 +20,34 @@ pub enum Op {
     LessEq,
 }
 
+impl Display for Op {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Op::Eq => write!(f, "="),
+            Op::Neq => write!(f, "!="),
+            Op::Greater => write!(f, ">"),
+            Op::GreaterEq => write!(f, ">="),
+            Op::Less => write!(f, "<"),
+            Op::LessEq => write!(f, "<="),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Where<'a> {
     pub field: &'a str,
     pub op: Op,
     pub value: CommandValue<'a>,
+}
+
+impl<'a: 'b, 'b> From<&'b Where<'a>> for WhereOwned {
+    fn from(value: &'b Where<'a>) -> Self {
+        WhereOwned {
+            value: (&value.value).into(),
+            op: value.op,
+            field: value.field.into(),
+        }
+    }
 }
 
 impl<'a> PartialEq<CommandValue<'a>> for &Value {
@@ -39,8 +62,7 @@ impl<'a> PartialEq<CommandValue<'a>> for &Value {
     }
 }
 
-impl Where<'_>
-{
+impl Where<'_> {
     fn compare_value(&self, other: &CommandValue) -> bool {
         match self.op {
             Op::Eq => other == &self.value,
@@ -52,10 +74,12 @@ impl Where<'_>
         }
     }
 
-    pub fn filter<K>(&self, key: &K, value: &Record) -> bool {
-        value.values.get(self.field).map_or_else(
-            || None, |v| Some(self.compare_value(&v.into()))
-        ).unwrap_or(false)
+    pub fn filter(&self, value: &Record) -> bool {
+        value
+            .values
+            .get(self.field)
+            .map_or_else(|| None, |v| Some(self.compare_value(&v.into())))
+            .unwrap_or(false)
     }
 }
 
@@ -117,6 +141,17 @@ pub enum FieldType {
     String,
     Int,
     Float,
+}
+
+impl Display for FieldType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FieldType::Bool => write!(f, "BOOL"),
+            FieldType::String => write!(f, "STRING"),
+            FieldType::Int => write!(f, "INT"),
+            FieldType::Float => write!(f, "FLOAT"),
+        }
+    }
 }
 
 impl FieldType {

@@ -1,5 +1,8 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
+use std::fs::File;
 use std::hash::Hash;
+use std::io::{Read, Write};
 
 pub mod parsing;
 use crate::AnyDatabase::{IntDatabase, StringDatabase};
@@ -15,6 +18,24 @@ pub enum AnyQueryOwned {
     IntQuery(QueryOwned<i64>),
 }
 
+impl<'a: 'b, 'b> From<&'b AnyQuery<'a>> for AnyQueryOwned {
+    fn from(value: &'b AnyQuery<'a>) -> Self {
+        match value {
+            AnyQuery::StringQuery(q) => AnyQueryOwned::StringQuery(q.into()),
+            AnyQuery::IntQuery(q) => AnyQueryOwned::IntQuery(q.into()),
+        }
+    }
+}
+
+impl Display for AnyQueryOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AnyQueryOwned::StringQuery(q) => write!(f, "{}", q),
+            AnyQueryOwned::IntQuery(q) => write!(f, "{}", q),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum QueryOwned<K: DatabaseKey> {
     Create(CreateQueryOwned),
@@ -25,11 +46,108 @@ pub enum QueryOwned<K: DatabaseKey> {
     ReadFrom(ReadFromQueryOwned),
 }
 
+impl<K: DatabaseKey> Display for QueryOwned<K> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            QueryOwned::Select(query) => write!(f, "{}", query),
+            QueryOwned::Create(query) => write!(f, "{}", query),
+            QueryOwned::Delete(query) => write!(f, "{}", query),
+            QueryOwned::Insert(query) => write!(f, "{}", query),
+            QueryOwned::SaveAs(query) => write!(f, "{}", query),
+            QueryOwned::ReadFrom(query) => write!(f, "{}", query),
+        }
+    }
+}
+
+impl Display for SelectQueryOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match &self.where_clause {
+            Some(where_clause) => write!(
+                f,
+                "SELECT {} FROM {} WHERE {}",
+                self.fields, self.table, where_clause
+            ),
+            None => write!(f, "SELECT {} FROM {}", self.fields, self.table),
+        }
+    }
+}
+
+impl Display for CreateQueryOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "CREATE {} KEY {} FIELDS {}",
+            self.table, self.key_field, self.fields_types
+        )
+    }
+}
+
+impl Display for InsertQueryOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut setters: String;
+        if self.insert_values.len() == 1 {
+            setters = self.insert_values[0].to_string();
+        } else {
+            setters = self.insert_values[0..self.insert_values.len()]
+                .iter()
+                .fold(String::new(), |a, v| {
+                    format!("{}{}, ", a, v).as_str().to_string()
+                })
+                .to_string();
+            setters.push_str(
+                self.insert_values[self.insert_values.len() - 1]
+                    .to_string()
+                    .as_str(),
+            );
+        }
+        write!(f, "INSERT {} INTO {}", setters, self.table)
+    }
+}
+
+impl<K: DatabaseKey> Display for DeleteQueryOwned<K> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "DELETE {} FROM {}", self.key, self.table)
+    }
+}
+
+impl Display for SaveAsQueryOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "SAVE_AS {}", self.file)
+    }
+}
+
+impl Display for ReadFromQueryOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "READ_FROM {}", self.file)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct NewFields(Vec<NewFieldOwned>);
+
+impl Display for NewFields {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.0.len() {
+            0 => write!(f, ""),
+            1 => write!(f, "{}", self.0[0]),
+            _ => {
+                let mut fields = self.0[0..self.0.len() - 1]
+                    .iter()
+                    .fold(String::new(), |acc, f| {
+                        format!("{}{}, ", acc, f).to_string()
+                    });
+                fields.push_str(self.0[self.0.len() - 1].to_string().as_str());
+                write!(f, "{}", fields)
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct CreateQueryOwned {
     pub table: String,
     pub key_field: String,
-    pub fields_types: Vec<NewFieldOwned>,
+    pub fields_types: NewFields,
 }
 
 #[derive(Debug, PartialEq)]
@@ -48,6 +166,20 @@ pub struct InsertQueryOwned {
 pub struct SelectQueryOwned {
     pub fields: SelectFieldsOwned,
     pub table: String,
+    pub where_clause: Option<WhereOwned>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct WhereOwned {
+    pub field: String,
+    pub op: Op,
+    pub value: Value,
+}
+
+impl Display for WhereOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {} {}", self.field, self.op, self.value)
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -66,10 +198,37 @@ pub struct NewFieldOwned {
     pub field_type: FieldType,
 }
 
+impl Display for NewFieldOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}:{}", self.field, self.field_type)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum SelectFieldsOwned {
     Fields(Vec<String>),
     AllFields(),
+}
+
+impl Display for SelectFieldsOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SelectFieldsOwned::Fields(fields) => match fields.len() {
+                0 => write!(f, ""),
+                1 => write!(f, "{}", fields[0]),
+                _ => {
+                    let mut str = fields[0..fields.len() - 1]
+                        .iter()
+                        .fold(String::new(), |acc, f| format!("{}{}, ", acc, f));
+                    str.push_str(fields[fields.len() - 1].as_str());
+                    write!(f, "{}", str)
+                }
+            },
+            SelectFieldsOwned::AllFields() => {
+                write!(f, "*")
+            }
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -78,8 +237,14 @@ pub struct InsertValueOwned {
     pub value: Value,
 }
 
-impl<'a> From<&InsertValue<'a>> for InsertValueOwned {
-    fn from(value: &InsertValue) -> Self {
+impl Display for InsertValueOwned {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}={}", self.field, self.value)
+    }
+}
+
+impl<'a, 'b> From<&'b InsertValue<'a>> for InsertValueOwned {
+    fn from(value: &'b InsertValue) -> Self {
         InsertValueOwned {
             field: value.field.into(),
             value: (&value.value).into(),
@@ -87,8 +252,8 @@ impl<'a> From<&InsertValue<'a>> for InsertValueOwned {
     }
 }
 
-impl<'a> From<&CommandValue<'a>> for Value {
-    fn from(value: &CommandValue) -> Self {
+impl<'a: 'b, 'b> From<&'b CommandValue<'a>> for Value {
+    fn from(value: &'b CommandValue) -> Self {
         match value {
             CommandValue::Bool(b) => Value::Bool(*b),
             CommandValue::String(s) => Value::String((*s).into()),
@@ -98,19 +263,8 @@ impl<'a> From<&CommandValue<'a>> for Value {
     }
 }
 
-impl<'a> From<&SelectFields<'a>> for SelectFieldsOwned {
-    fn from(value: &SelectFields<'a>) -> Self {
-        match value {
-            SelectFields::AllFields() => SelectFieldsOwned::AllFields(),
-            SelectFields::Fields(fields) => {
-                SelectFieldsOwned::Fields(fields.iter().map(|s| s.to_string()).collect())
-            }
-        }
-    }
-}
-
-impl<'a> From<&NewField<'a>> for NewFieldOwned {
-    fn from(value: &NewField<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b NewField<'a>> for NewFieldOwned {
+    fn from(value: &'b NewField<'a>) -> Self {
         NewFieldOwned {
             field: value.field.into(),
             field_type: value.field_type,
@@ -118,8 +272,8 @@ impl<'a> From<&NewField<'a>> for NewFieldOwned {
     }
 }
 
-impl<'a> From<SelectFields<'a>> for SelectFieldsOwned {
-    fn from(value: SelectFields<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b SelectFields<'a>> for SelectFieldsOwned {
+    fn from(value: &'b SelectFields<'a>) -> Self {
         match value {
             SelectFields::AllFields() => SelectFieldsOwned::AllFields(),
             SelectFields::Fields(fields) => {
@@ -129,27 +283,27 @@ impl<'a> From<SelectFields<'a>> for SelectFieldsOwned {
     }
 }
 
-impl<'a> From<CreateQuery<'a>> for CreateQueryOwned {
-    fn from(value: CreateQuery<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b CreateQuery<'a>> for CreateQueryOwned {
+    fn from(value: &'b CreateQuery<'a>) -> Self {
         CreateQueryOwned {
             table: value.table.into(),
-            key_field: value.table.into(),
-            fields_types: value.fields_types.iter().map(|t| t.into()).collect(),
+            key_field: value.key_field.into(),
+            fields_types: NewFields(value.fields_types.iter().map(|t| t.into()).collect()),
         }
     }
 }
 
-impl<'a, K: DatabaseKey> From<DeleteQuery<'a, K>> for DeleteQueryOwned<K> {
-    fn from(value: DeleteQuery<'a, K>) -> Self {
+impl<'a: 'b, 'b, K: DatabaseKey> From<&'b DeleteQuery<'a, K>> for DeleteQueryOwned<K> {
+    fn from(value: &'b DeleteQuery<'a, K>) -> Self {
         DeleteQueryOwned {
             table: value.table.into(),
-            key: value.key,
+            key: value.key.clone(),
         }
     }
 }
 
-impl<'a> From<InsertQuery<'a>> for InsertQueryOwned {
-    fn from(value: InsertQuery<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b InsertQuery<'a>> for InsertQueryOwned {
+    fn from(value: &'b InsertQuery<'a>) -> Self {
         InsertQueryOwned {
             table: value.table.into(),
             insert_values: value.insert_values.iter().map(|v| v.into()).collect(),
@@ -157,33 +311,37 @@ impl<'a> From<InsertQuery<'a>> for InsertQueryOwned {
     }
 }
 
-impl<'a> From<SelectQuery<'a>> for SelectQueryOwned {
-    fn from(value: SelectQuery<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b SelectQuery<'a>> for SelectQueryOwned {
+    fn from(value: &'b SelectQuery<'a>) -> Self {
         SelectQueryOwned {
             table: value.table.into(),
-            fields: value.fields.into(),
+            fields: (&value.fields).into(),
+            where_clause: value
+                .where_clause
+                .as_ref()
+                .map(|where_clause| where_clause.into()),
         }
     }
 }
 
-impl<'a> From<SaveAsQuery<'a>> for SaveAsQueryOwned {
-    fn from(value: SaveAsQuery<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b SaveAsQuery<'a>> for SaveAsQueryOwned {
+    fn from(value: &'b SaveAsQuery<'a>) -> Self {
         SaveAsQueryOwned {
             file: value.file.into(),
         }
     }
 }
 
-impl<'a> From<ReadFromQuery<'a>> for ReadFromQueryOwned {
-    fn from(value: ReadFromQuery<'a>) -> Self {
+impl<'a: 'b, 'b> From<&'b ReadFromQuery<'a>> for ReadFromQueryOwned {
+    fn from(value: &'b ReadFromQuery<'a>) -> Self {
         ReadFromQueryOwned {
             file: value.file.into(),
         }
     }
 }
 
-impl<'a, K: DatabaseKey> From<Query<'a, K>> for QueryOwned<K> {
-    fn from(value: Query<'a, K>) -> Self {
+impl<'a: 'b, 'b, K: DatabaseKey> From<&'b Query<'a, K>> for QueryOwned<K> {
+    fn from(value: &'b Query<'a, K>) -> Self {
         match value {
             Query::Select(q) => QueryOwned::Select(q.into()),
             Query::Delete(q) => QueryOwned::Delete(q.into()),
@@ -191,15 +349,6 @@ impl<'a, K: DatabaseKey> From<Query<'a, K>> for QueryOwned<K> {
             Query::Create(q) => QueryOwned::Create(q.into()),
             Query::SaveAs(q) => QueryOwned::SaveAs(q.into()),
             Query::ReadFrom(q) => QueryOwned::ReadFrom(q.into()),
-        }
-    }
-}
-
-impl<'a> From<AnyQuery<'a>> for AnyQueryOwned {
-    fn from(value: AnyQuery<'a>) -> Self {
-        match value {
-            AnyQuery::StringQuery(q) => AnyQueryOwned::StringQuery(q.into()),
-            AnyQuery::IntQuery(q) => AnyQueryOwned::IntQuery(q.into()),
         }
     }
 }
@@ -227,14 +376,14 @@ pub struct CreateCommand<'a, 'b, K: DatabaseKey> {
 }
 
 #[derive(Debug)]
-pub struct SaveAs<'a, 'b, K: DatabaseKey> {
+pub struct SaveAsCommand<'a, 'b, K: DatabaseKey> {
     db: &'a Database<K>,
     pub query: SaveAsQuery<'b>,
 }
 
 #[derive(Debug)]
-pub struct ReadFrom<'a, 'b, K: DatabaseKey> {
-    db: &'a Database<K>,
+pub struct ReadFromCommand<'a, 'b, K: DatabaseKey> {
+    db: &'a mut Database<K>,
     pub query: ReadFromQuery<'b>,
 }
 
@@ -250,32 +399,19 @@ pub enum AnyCommandInternal<'a, 'b, K: DatabaseKey> {
     Insert(InsertCommand<'a, 'b, K>),
     Create(CreateCommand<'a, 'b, K>),
     Delete(DeleteCommand<'a, 'b, K>),
-    SaveAs(SaveAs<'a, 'b, K>),
-    ReadFrom(ReadFrom<'a, 'b, K>),
+    SaveAs(SaveAsCommand<'a, 'b, K>),
+    ReadFrom(ReadFromCommand<'a, 'b, K>),
 }
 
-impl<'a, 'b> AnyCommandInternal<'a, 'b, String> {
-    fn query(self) -> AnyQuery<'b> {
+impl<'a, 'b, K: DatabaseKey> AnyCommandInternal<'a, 'b, K> {
+    pub fn query(self) -> Query<'b, K> {
         match self {
-            AnyCommandInternal::Select(c) => AnyQuery::StringQuery(c.query.into()),
-            AnyCommandInternal::Create(c) => AnyQuery::StringQuery(c.query.into()),
-            AnyCommandInternal::Insert(c) => AnyQuery::StringQuery(c.query.into()),
-            AnyCommandInternal::Delete(c) => AnyQuery::StringQuery(c.query.into()),
-            AnyCommandInternal::SaveAs(c) => AnyQuery::StringQuery(c.query.into()),
-            AnyCommandInternal::ReadFrom(c) => AnyQuery::StringQuery(c.query.into()),
-        }
-    }
-}
-
-impl<'a, 'b> AnyCommandInternal<'a, 'b, i64> {
-    fn query(self) -> AnyQuery<'b> {
-        match self {
-            AnyCommandInternal::Select(c) => AnyQuery::IntQuery(c.query.into()),
-            AnyCommandInternal::Create(c) => AnyQuery::IntQuery(c.query.into()),
-            AnyCommandInternal::Insert(c) => AnyQuery::IntQuery(c.query.into()),
-            AnyCommandInternal::Delete(c) => AnyQuery::IntQuery(c.query.into()),
-            AnyCommandInternal::SaveAs(c) => AnyQuery::IntQuery(c.query.into()),
-            AnyCommandInternal::ReadFrom(c) => AnyQuery::IntQuery(c.query.into()),
+            AnyCommandInternal::Select(c) => c.query.into(),
+            AnyCommandInternal::Create(c) => c.query.into(),
+            AnyCommandInternal::Insert(c) => c.query.into(),
+            AnyCommandInternal::Delete(c) => c.query.into(),
+            AnyCommandInternal::SaveAs(c) => c.query.into(),
+            AnyCommandInternal::ReadFrom(c) => c.query.into(),
         }
     }
 }
@@ -289,8 +425,8 @@ pub enum AnyCommand<'a, 'b> {
 impl<'a, 'b> AnyCommand<'a, 'b> {
     pub fn query(self) -> AnyQuery<'b> {
         match self {
-            AnyCommand::StringCommand(c) => c.query(),
-            AnyCommand::IntCommand(c) => c.query(),
+            AnyCommand::StringCommand(c) => AnyQuery::StringQuery(c.query()),
+            AnyCommand::IntCommand(c) => AnyQuery::IntQuery(c.query()),
         }
     }
 }
@@ -346,8 +482,10 @@ fn parse_command_<'a, 'b, K: DatabaseKey>(
             Query::Select(query) => parse_command_select(db, query),
             Query::Insert(query) => parse_command_insert(db, query),
             Query::Delete(query) => parse_command_delete(db, query),
-            Query::SaveAs(query) => Ok(AnyCommandInternal::SaveAs(SaveAs { db, query })),
-            Query::ReadFrom(query) => Ok(AnyCommandInternal::ReadFrom(ReadFrom { db, query })),
+            Query::SaveAs(query) => Ok(AnyCommandInternal::SaveAs(SaveAsCommand { db, query })),
+            Query::ReadFrom(query) => {
+                Ok(AnyCommandInternal::ReadFrom(ReadFromCommand { db, query }))
+            }
         },
         Err(e) => Err(e.to_string()),
     }
@@ -401,13 +539,13 @@ pub enum Value {
     Float(f64),
 }
 
-impl Value {
-    fn field_type(&self) -> FieldType {
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Bool(_) => FieldType::Bool,
-            Value::String(_) => FieldType::String,
-            Value::Int(_) => FieldType::Int,
-            Value::Float(_) => FieldType::Float,
+            Value::Bool(v) => write!(f, "{}", v),
+            Value::String(v) => write!(f, "\"{}\"", v),
+            Value::Int(v) => write!(f, "{}", v),
+            Value::Float(v) => write!(f, "{}", v),
         }
     }
 }
@@ -418,7 +556,7 @@ struct CommandRecord<'a> {
 }
 
 #[derive(Debug, Clone)]
-struct Record {
+pub struct Record {
     values: HashMap<String, Value>,
 }
 
@@ -431,9 +569,27 @@ impl<'a> From<&'a Record> for CommandRecord<'a> {
 }
 
 #[derive(Debug)]
+struct CommandHistory<K: DatabaseKey>(Vec<QueryOwned<K>>);
+
+impl<K: DatabaseKey> CommandHistory<K> {
+    fn new() -> Self {
+        CommandHistory(vec![])
+    }
+}
+
+impl<K: DatabaseKey> Display for CommandHistory<K> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let res = self.0.iter().fold(String::new(), |acc, q| {
+            format!("{}{}\n", acc, q).to_string()
+        });
+        write!(f, "{}", res)
+    }
+}
+
+#[derive(Debug)]
 pub struct Database<K: DatabaseKey> {
     tables: HashMap<String, Table<K>>,
-    command_history: Vec<AnyQueryOwned>,
+    command_history: CommandHistory<K>,
 }
 
 impl<K: DatabaseKey> Default for Database<K> {
@@ -446,12 +602,12 @@ impl<K: DatabaseKey> Database<K> {
     pub fn new() -> Database<K> {
         Database {
             tables: HashMap::new(),
-            command_history: Vec::new(),
+            command_history: CommandHistory::new(),
         }
     }
 
-    pub fn history_push(&mut self, query: AnyQuery) {
-        self.command_history.push(query.into());
+    pub fn history_push(&mut self, query: QueryOwned<K>) {
+        self.command_history.0.push(query);
     }
 }
 
@@ -483,10 +639,22 @@ impl AnyDatabase {
         IntDatabase(Database::new())
     }
 
-    pub fn history_push(&mut self, query_owned: AnyQueryOwned) {
+    pub fn history_push(&mut self, query: AnyQueryOwned) -> Result<(), String> {
         match self {
-            StringDatabase(database) => database.command_history.push(query_owned),
-            IntDatabase(database) => database.command_history.push(query_owned),
+            StringDatabase(database) => match query {
+                AnyQueryOwned::StringQuery(query) => {
+                    database.command_history.0.push(query);
+                    Ok(())
+                }
+                AnyQueryOwned::IntQuery(_) => Err("invalid query type".to_string()),
+            },
+            IntDatabase(database) => match query {
+                AnyQueryOwned::IntQuery(query) => {
+                    database.command_history.0.push(query);
+                    Ok(())
+                }
+                AnyQueryOwned::StringQuery(_) => Err("invalid query type".to_string()),
+            },
         }
     }
 }
@@ -497,21 +665,137 @@ pub struct SelectResult<'a, 'b> {
     records: Vec<CommandRecord<'a>>,
 }
 
-#[derive(Debug)]
-pub struct CreateResult {}
-#[derive(Debug)]
+impl<'a, 'b> SelectResult<'a, 'b> {
+    fn command_value_to_string(cv: &CommandValue<'_>) -> String {
+        match cv {
+            CommandValue::Bool(b) => format!("{}", b),
+            CommandValue::String(s) => s.to_string(),
+            CommandValue::Int(i) => format!("{}", i),
+            CommandValue::Float(fl) => format!("{}", fl),
+        }
+    }
 
-pub struct DeleteResult {}
+    fn pad_cell(s: &str, width: usize) -> String {
+        let mut out = String::new();
+        out.push(' ');
+        out.push_str(s);
+        if width > 1 + s.len() {
+            out.push_str(&" ".repeat(width - 1 - s.len()));
+        }
+        out
+    }
 
-#[derive(Debug)]
-pub struct InsertResult {}
+    fn build_columns(&self) -> Vec<Vec<String>> {
+        let mut cols: Vec<Vec<String>> = Vec::with_capacity(self.fields.len());
+        for _ in 0..self.fields.len() {
+            cols.push(Vec::new());
+        }
+
+        for rec in &self.records {
+            for (i, val) in rec.values.iter().enumerate().take(self.fields.len()) {
+                cols[i].push(Self::command_value_to_string(val));
+            }
+        }
+
+        cols
+    }
+
+    fn calculate_widths(&self, cols: &[Vec<String>]) -> Vec<usize> {
+        const MARGIN: usize = 2; // spaces padding (one left, one right)
+        let mut widths: Vec<usize> = self.fields.iter().map(|h| h.len()).collect();
+
+        for (i, col) in cols.iter().enumerate() {
+            for cell in col {
+                if cell.len() > widths[i] {
+                    widths[i] = cell.len();
+                }
+            }
+            widths[i] += MARGIN;
+        }
+
+        widths
+    }
+
+    /// Build a separator line with box-drawing characters
+    fn build_separator(widths: &[usize], left: char, mid: char, right: char, horiz: char) -> String {
+        let mut sep = String::new();
+        sep.push(left);
+        for (i, w) in widths.iter().enumerate() {
+            sep.push_str(&horiz.to_string().repeat(*w));
+            if i < widths.len() - 1 {
+                sep.push(mid);
+            }
+        }
+        sep.push(right);
+        sep
+    }
+
+    /// Build a data row (header or data)
+    fn build_row(cells: &[&str], widths: &[usize]) -> String {
+        let mut row = String::new();
+        row.push('│');
+        for (i, cell) in cells.iter().enumerate() {
+            row.push_str(&Self::pad_cell(cell, widths[i]));
+            row.push('│');
+        }
+        row
+    }
+}
+
+impl<'a, 'b> Display for SelectResult<'a, 'b> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let cols = self.build_columns();
+        let widths = self.calculate_widths(&cols);
+
+        let top_sep = Self::build_separator(&widths, '┌', '┬', '┐', '─');
+        writeln!(f, "{}", top_sep)?;
+
+        let header_cells: Vec<&str> = self.fields.to_vec();
+        let header = Self::build_row(&header_cells, &widths);
+        writeln!(f, "{}", header)?;
+
+        let mid_sep = Self::build_separator(&widths, '├', '┼', '┤', '─');
+        writeln!(f, "{}", mid_sep)?;
+
+        for row_idx in 0..self.records.len() {
+            let row_cells: Vec<&str> = (0..self.fields.len())
+                .map(|col_idx| {
+                    cols.get(col_idx)
+                        .and_then(|c| c.get(row_idx))
+                        .map(|s| s.as_str())
+                        .unwrap_or("")
+                })
+                .collect();
+            let row = Self::build_row(&row_cells, &widths);
+            writeln!(f, "{}", row)?;
+        }
+
+        let bottom_sep = Self::build_separator(&widths, '└', '┴', '┘', '─');
+        writeln!(f, "{}", bottom_sep)
+    }
+}
 
 #[derive(Debug)]
 pub enum CommandResult<'a, 'b> {
     Select(SelectResult<'a, 'b>),
-    Create(CreateResult),
-    Delete(DeleteResult),
-    Insert(InsertResult),
+    Create,
+    Delete,
+    Insert,
+    SaveAs,
+    ReadFrom,
+}
+
+impl<'a, 'b> Display for CommandResult<'a, 'b> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandResult::Select(select) => write!(f, "Done Select:\n{}", select),
+            CommandResult::Create => write!(f, "Done Create"),
+            CommandResult::Delete => write!(f, "Done Delete"),
+            CommandResult::Insert => write!(f, "Done Insert"),
+            CommandResult::SaveAs => write!(f, "Done SaveAs"),
+            CommandResult::ReadFrom => write!(f, "Done ReadFrom"),
+        }
+    }
 }
 
 pub trait Command<'a, 'b> {
@@ -548,11 +832,11 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
             .table
             .records
             .iter()
-            .filter(|(key, record)| {
+            .filter(|(_, record)| {
                 self.query
                     .where_clause
                     .as_ref()
-                    .is_none_or(|wc| wc.filter(key, record))
+                    .is_none_or(|wc| wc.filter(record))
             })
             .map(|(key, record)| {
                 let mut values = Vec::with_capacity(selected_fields.len());
@@ -581,21 +865,52 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SaveAs<'a, 'b, K> {
+impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SaveAsCommand<'a, 'b, K> {
     fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
-        println!("{:?}", self.db.command_history);
-        // todo!();
-        // TODO: implement
-        Err("not implemented".to_owned())
+        let mut f = File::create(self.query.file);
+        match &mut f {
+            Ok(file) => {
+                let write_res = file.write_all(self.db.command_history.to_string().as_bytes());
+                match write_res {
+                    Ok(_) => Ok(CommandResult::Create),
+                    Err(e) => Err(format!("{}", e).to_string()),
+                }
+            }
+            Err(e) => Err(format!("{}", e).to_string()),
+        }
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command<'a, 'b> for ReadFrom<'a, 'b, K> {
+impl<'a, 'b, K: DatabaseKey> Command<'a, 'b> for ReadFromCommand<'a, 'b, K> {
     fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
-        println!("{:?}", self.db.command_history);
-        // todo!();
-        // TODO: implement
-        Err("not implemented".to_owned())
+        let mut f = File::open(self.query.file);
+        match &mut f {
+            Ok(file) => {
+                let mut file_content = String::new();
+                let read_res = file.read_to_string(&mut file_content);
+                if let Err(e) = read_res {
+                    return Err(format!("{}", e).to_string());
+                }
+                for line in file_content.lines() {
+                    let line = line.trim();
+                    if line.is_empty() {
+                        continue;
+                    }
+                    let command = parse_command_(self.db, line);
+                    match command {
+                        Ok(mut command) => {
+                            let result = command.execute()?;
+                            println!("{}", result);
+                            let query = (&command.query()).into();
+                            self.db.history_push(query);
+                        }
+                        Err(e) => return Err(e.to_string()),
+                    }
+                }
+                Ok(CommandResult::ReadFrom)
+            }
+            Err(e) => Err(e.to_string()),
+        }
     }
 }
 
@@ -621,7 +936,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
         self.db
             .tables
             .insert(self.query.table.to_owned(), new_table);
-        Ok(CommandResult::Create(CreateResult {}))
+        Ok(CommandResult::Create)
     }
 }
 
@@ -662,8 +977,13 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             .collect();
         if !missing_fields.is_empty() {
             return Err(format!(
-                "Fields: {:?} in table: {} are missing",
-                missing_fields, self.query.table
+                "Fields: [{}] in table: {} are missing",
+                missing_fields
+                    .iter()
+                    .map(|s| format!("'{}'", s))
+                    .collect::<Vec<String>>()
+                    .join(", "),
+                self.query.table
             ));
         }
 
@@ -723,7 +1043,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             },
         );
 
-        Ok(CommandResult::Insert(InsertResult {}))
+        Ok(CommandResult::Insert)
     }
 }
 
@@ -736,7 +1056,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for DeleteCommand<'a, 'b, K> {
                 self.query.key, self.query.table
             ));
         }
-        Ok(CommandResult::Delete(DeleteResult {}))
+        Ok(CommandResult::Delete)
     }
 }
 
@@ -827,8 +1147,8 @@ pub trait DatabaseKey
 where
     Self: std::str::FromStr,
     Self: Ord,
-    Self: std::fmt::Display,
-    Self: 'static,
+    Self: Display,
+    Self: Clone,
 {
     fn get_command_value(value: &Self) -> CommandValue<'_>;
     fn from_command_value(value: CommandValue) -> Option<Self>;
