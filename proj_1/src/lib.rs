@@ -363,7 +363,7 @@ pub fn parse_command<'a, 'b>(
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Clone)]
 pub enum CommandValue<'a> {
     Bool(bool),
     String(&'a str),
@@ -529,18 +529,33 @@ pub enum CommandResult<'a> {
     Insert(InsertResult),
 }
 
-pub trait Command {
-    fn execute(&mut self) -> Result<CommandResult<'_>, String>;
+pub trait Command<'a> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String>;
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for SelectCommand<'a, 'b, K> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for SelectCommand<'a, 'b, K> {
     fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         let table = self.table;
-        let result: Vec<CommandRecord> = match &self.query.fields {
-            SelectFields::AllFields() => table.records.iter().map(|p| p.1.into()).collect(),
+        let result: Vec<CommandRecord> = match &self.query.fields { // TODO: this can be simplified
+            SelectFields::AllFields() => table
+                .records
+                .iter()
+                .filter(|p| {
+                    let Some(where_clause) = &self.query.where_clause else {
+                        return true;
+                    };
+                    where_clause.filter(p.0, p.1)
+                })
+                .map(|p| p.1.into()).collect(),
             SelectFields::Fields(v) => table
                 .records
                 .iter()
+                .filter(|p| {
+                    let Some(where_clause) = &self.query.where_clause else {
+                        return true;
+                    };
+                    where_clause.filter(p.0, p.1)
+                })
                 .map(|p| {
                     (
                         p.0,
@@ -562,8 +577,8 @@ impl<'a, 'b, K: DatabaseKey> Command for SelectCommand<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for SaveAs<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'b>, String> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for SaveAs<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         println!("{:?}", self.db.command_history);
         // todo!();
         // TODO: implement
@@ -571,8 +586,8 @@ impl<'a, 'b, K: DatabaseKey> Command for SaveAs<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for ReadFrom<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'b>, String> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for ReadFrom<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         println!("{:?}", self.db.command_history);
         // todo!();
         // TODO: implement
@@ -580,8 +595,8 @@ impl<'a, 'b, K: DatabaseKey> Command for ReadFrom<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for CreateCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'_>, String> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for CreateCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         let existing = self.db.tables.get(self.query.table);
         if existing.is_some() {
             return Err(format!("Table {} already exists", self.query.table));
@@ -606,8 +621,8 @@ impl<'a, 'b, K: DatabaseKey> Command for CreateCommand<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for InsertCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'_>, String> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for InsertCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         /* check if nonexistent fields are present */
         let non_existent: Vec<&InsertValue> = self
             .query
@@ -708,8 +723,8 @@ impl<'a, 'b, K: DatabaseKey> Command for InsertCommand<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for DeleteCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'_>, String> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for DeleteCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         let delete_res = self.table.records.remove(&self.query.key);
         if delete_res.is_none() {
             return Err(format!(
@@ -721,8 +736,8 @@ impl<'a, 'b, K: DatabaseKey> Command for DeleteCommand<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command for AnyCommandInternal<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'_>, String> {
+impl<'a, 'b, K: DatabaseKey> Command<'a> for AnyCommandInternal<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         match self {
             AnyCommandInternal::Select(select) => select.execute(),
             AnyCommandInternal::Insert(insert) => insert.execute(),
@@ -734,8 +749,8 @@ impl<'a, 'b, K: DatabaseKey> Command for AnyCommandInternal<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b> Command for AnyCommand<'a, 'b> {
-    fn execute(&mut self) -> Result<CommandResult<'_>, String> {
+impl<'a, 'b> Command<'a> for AnyCommand<'a, 'b> {
+    fn execute(&mut self) -> Result<CommandResult<'a>, String> {
         match self {
             AnyCommand::StringCommand(cmd) => cmd.execute(),
             AnyCommand::IntCommand(cmd) => cmd.execute(),
@@ -817,111 +832,22 @@ where
 mod tests {
     use super::*;
 
-    fn db_sample() -> Database<String> {
-        let mut db = Database::<String>::new();
-        let query = CreateQuery {
-            table: "users",
-            key_field: "id",
-            fields_types: vec![
-                NewField {
-                    field: "name",
-                    field_type: FieldType::String,
-                },
-                NewField {
-                    field: "surname",
-                    field_type: FieldType::String,
-                },
-                NewField {
-                    field: "age",
-                    field_type: FieldType::Int,
-                },
-                NewField {
-                    field: "married",
-                    field_type: FieldType::Bool,
-                },
-                NewField {
-                    field: "credit score",
-                    field_type: FieldType::Float,
-                },
-            ],
-        };
-        let mut command = CreateCommand { db: &mut db, query };
-        let res = command.execute();
-        assert!(res.is_ok());
-        db
-    }
+    pub fn db_sample() -> Database<String> {
+        let mut any_db = StringDatabase(Database::<String>::new());
 
-    fn db_sample_with_data() -> Database<String> {
-        let mut db = db_sample();
-        let insert_query1 = InsertQuery {
-            table: "users",
-            insert_values: vec![
-                InsertValue {
-                    field: "id",
-                    value: CommandValue::String("1"),
-                },
-                InsertValue {
-                    field: "name",
-                    value: CommandValue::String("Alice"),
-                },
-                InsertValue {
-                    field: "surname",
-                    value: CommandValue::String("A"),
-                },
-                InsertValue {
-                    field: "age",
-                    value: CommandValue::Int(30),
-                },
-                InsertValue {
-                    field: "married",
-                    value: CommandValue::Bool(true),
-                },
-                InsertValue {
-                    field: "credit score",
-                    value: CommandValue::Float(100.0),
-                },
-            ],
-        };
-        let mut cmd1 = InsertCommand {
-            table: db.tables.get_mut("users").unwrap(),
-            query: insert_query1,
-        };
-        cmd1.execute().unwrap();
+        let mut create = parse_command(&mut any_db, "CREATE users KEY id FIELDS name: STRING, surname: STRING, age: INT, married: BOOL, credit_score: FLOAT").unwrap();
+        create.execute().unwrap();
 
-        let insert_query2 = InsertQuery {
-            table: "users",
-            insert_values: vec![
-                InsertValue {
-                    field: "id",
-                    value: CommandValue::String("2"),
-                },
-                InsertValue {
-                    field: "name",
-                    value: CommandValue::String("Bob"),
-                },
-                InsertValue {
-                    field: "surname",
-                    value: CommandValue::String("B"),
-                },
-                InsertValue {
-                    field: "age",
-                    value: CommandValue::Int(25),
-                },
-                InsertValue {
-                    field: "married",
-                    value: CommandValue::Bool(false),
-                },
-                InsertValue {
-                    field: "credit score",
-                    value: CommandValue::Float(200.0),
-                },
-            ],
-        };
-        let mut cmd2 = InsertCommand {
-            table: db.tables.get_mut("users").unwrap(),
-            query: insert_query2,
-        };
-        cmd2.execute().unwrap();
+        let mut insert = parse_command(&mut any_db,"INSERT id='1', name='Jan', surname='Kowalski', age=40, married=true, credit_score=7.8 INTO users").unwrap();
+        insert.execute().unwrap();
+
+        let mut insert = parse_command(&mut any_db,"INSERT id='2', name='Ignacy', surname='Nowak', age=29, married=true, credit_score=6.4 INTO users").unwrap();
+        insert.execute().unwrap();
+
+        let mut insert = parse_command(&mut any_db,"INSERT id='3', name='Konrad', surname='Adenauer', age=91, married=true, credit_score=2.1 INTO users").unwrap();
+        insert.execute().unwrap();
+
+        let StringDatabase(db) = any_db else { unreachable!() };
         db
     }
 
@@ -934,18 +860,18 @@ mod tests {
         assert_eq!(table.types.get("surname"), Some(&FieldType::String));
         assert_eq!(table.types.get("age"), Some(&FieldType::Int));
         assert_eq!(table.types.get("married"), Some(&FieldType::Bool));
-        assert_eq!(table.types.get("credit score"), Some(&FieldType::Float));
+        assert_eq!(table.types.get("credit_score"), Some(&FieldType::Float));
     }
 
     #[test]
     fn test_create_table() {
-        let db = db_sample();
+        let db = Database::<String>::new();
         assert_db_sample_structure_unchanged(&db);
     }
 
     #[test]
     fn test_create_table_already_exists() {
-        let mut db = db_sample();
+        let mut db = Database::<String>::new();
         let query = CreateQuery {
             table: "users",
             key_field: "id",
@@ -973,7 +899,7 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "id",
-                    value: CommandValue::String("1"),
+                    value: CommandValue::String("7"),
                 },
                 InsertValue {
                     field: "name",
@@ -1026,7 +952,7 @@ mod tests {
 
     #[test]
     fn test_insert_duplicate_key() {
-        let mut db = db_sample_with_data();
+        let mut db = db_sample();
 
         let insert_query = InsertQuery {
             table: "users",
@@ -1072,7 +998,7 @@ mod tests {
 
     #[test]
     fn test_select_all_fields() {
-        let db = db_sample_with_data();
+        let db = db_sample();
 
         let select_query = SelectQuery {
             table: "users",
@@ -1095,7 +1021,7 @@ mod tests {
 
     #[test]
     fn test_select_specific_fields() {
-        let db = db_sample_with_data();
+        let db = db_sample();
 
         let select_query = SelectQuery {
             table: "users",
@@ -1126,7 +1052,7 @@ mod tests {
 
     #[test]
     fn test_delete() {
-        let mut db = db_sample_with_data();
+        let mut db = db_sample();
 
         let delete_query = DeleteQuery {
             table: "users",
@@ -1146,7 +1072,7 @@ mod tests {
 
     #[test]
     fn test_delete_non_existent_key() {
-        let mut db = db_sample_with_data();
+        let mut db = db_sample();
 
         let delete_query = DeleteQuery {
             table: "users",
@@ -1164,5 +1090,71 @@ mod tests {
         );
         let table = db.tables.get("users").unwrap();
         assert_eq!(table.records.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod select_where_clause_tests {
+    use tests::db_sample;
+    use super::*;
+
+    fn execute_select_with_where<'a, 'b>(
+        db: &'a Database<String>,
+        where_clause: Where<'b>,
+    ) -> SelectResult<'a> {
+        let select_query = SelectQuery {
+            table: "users",
+            fields: SelectFields::AllFields(),
+            where_clause: Some(where_clause),
+        };
+        let mut select_command = SelectCommand {
+            table: db.tables.get("users").unwrap(),
+            query: select_query,
+        };
+        let result = select_command.execute();
+        assert!(result.is_ok());
+
+        if let Ok(CommandResult::Select(select_result)) = result {
+            select_result
+        } else {
+            panic!("Expected a SelectResult");
+        }
+    }
+
+    #[test]
+    fn test_select_where_age_greater_than() {
+        let db = db_sample();
+        let where_clause = Where {
+            field: "age",
+            op: Op::Greater,
+            value: CommandValue::Int(30),
+        };
+
+        let select_result = execute_select_with_where(&db, where_clause);
+
+        assert_eq!(select_result.records.len(), 2);
+        assert!(select_result
+            .records
+            .iter()
+            .all(|r| r.values.get("age").unwrap() > &CommandValue::Int(30)));
+    }
+
+    #[test]
+    fn test_select_where_surname_equals() {
+        let db = db_sample();
+        let where_clause = Where {
+            field: "surname",
+            op: Op::Eq,
+            value: CommandValue::String("Nowak"),
+        };
+
+        let select_result = execute_select_with_where(&db, where_clause);
+
+        assert_eq!(select_result.records.len(), 1);
+        let record = &select_result.records[0];
+        assert_eq!(
+            record.values.get("surname"),
+            Some(&CommandValue::String("Nowak"))
+        );
     }
 }

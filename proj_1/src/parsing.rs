@@ -1,3 +1,4 @@
+use std::cmp::PartialEq;
 use super::*;
 use pest::Parser;
 use pest::iterators::Pair;
@@ -24,6 +25,38 @@ pub struct Where<'a> {
     pub field: &'a str,
     pub op: Op,
     pub value: CommandValue<'a>,
+}
+
+impl<'a> PartialEq<CommandValue<'a>> for &Value {
+    fn eq(&self, other: &CommandValue) -> bool {
+        match (self, other) {
+            (Value::Int(a), CommandValue::Int(b)) => a == b,
+            (Value::Float(a), CommandValue::Float(b)) => a == b,
+            (Value::String(a), CommandValue::String(b)) => a == b,
+            (Value::Bool(a), CommandValue::Bool(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Where<'_>
+{
+    fn compare_value(&self, other: &CommandValue) -> bool {
+        match self.op {
+            Op::Eq => other == &self.value,
+            Op::Neq => other != &self.value,
+            Op::LessEq => other <= &self.value,
+            Op::GreaterEq => other >= &self.value,
+            Op::Greater => other > &self.value,
+            Op::Less => other < &self.value,
+        }
+    }
+
+    pub fn filter<K>(&self, key: &K, value: &Record) -> bool {
+        value.values.get(self.field).map_or_else(
+            || None, |v| Some(self.compare_value(&v.into()))
+        ).unwrap_or(false)
+    }
 }
 
 #[derive(Debug, PartialEq)]
