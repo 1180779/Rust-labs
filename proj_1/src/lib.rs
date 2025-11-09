@@ -518,19 +518,17 @@ pub trait Command<'a, 'b> {
     fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String>;
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
-        let table = self.table;
-
-        let selected_fields: Vec<&str> = match &self.query.fields {
+impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
+    fn execute_fields(&self) -> Result<Vec<&'b str>, String> {
+        Ok(match &self.query.fields {
             SelectFields::AllFields() => {
-                let mut fields: Vec<&str> = table.types.keys().map(|k| k.as_str()).collect();
-                fields.sort_unstable();
+                let mut fields: Vec<&str> = self.table.types.keys().map(|k| k.as_str()).collect();
+                fields.sort();
                 fields
             }
             SelectFields::Fields(v) => {
                 for field_name in v {
-                    if !table.types.contains_key(*field_name) {
+                    if !self.table.types.contains_key(*field_name) {
                         return Err(format!(
                             "Field {} not found in table {}",
                             field_name, self.query.table
@@ -539,9 +537,15 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
                 }
                 v.to_vec()
             }
-        };
+        })
+    }
 
-        let result_records = table
+    fn execute_select(
+        &self,
+        selected_fields: &[&'b str],
+    ) -> Result<Vec<CommandRecord<'a>>, String> {
+        Ok(self
+            .table
             .records
             .iter()
             .filter(|(key, record)| {
@@ -552,27 +556,23 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
             })
             .map(|(key, record)| {
                 let mut values = Vec::with_capacity(selected_fields.len());
-                for &field_name in &selected_fields {
-                    if field_name == table.key_field {
-                        let key_val = if let Some(s_key) =
-                            (key as &dyn std::any::Any).downcast_ref::<String>()
-                        {
-                            CommandValue::String(s_key)
-                        } else if let Some(i_key) =
-                            (key as &dyn std::any::Any).downcast_ref::<i64>()
-                        {
-                            CommandValue::Int(*i_key)
-                        } else {
-                            unreachable!(); // Should be only String or i64
-                        };
-                        values.push(key_val);
+                for &field_name in selected_fields {
+                    if field_name == self.table.key_field {
+                        values.push(K::get_command_value(key));
                     } else if let Some(val) = record.values.get(field_name) {
                         values.push(val.into());
                     }
                 }
                 CommandRecord { values }
             })
-            .collect();
+            .collect())
+    }
+}
+
+impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
+        let selected_fields: Vec<&str> = self.execute_fields()?;
+        let result_records = self.execute_select(&selected_fields)?;
 
         Ok(CommandResult::Select(SelectResult {
             fields: selected_fields,
@@ -707,7 +707,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             .find(|p| p.field == self.table.key_field)
             .map(|p| p.value.clone())
             .unwrap();
-        let key_value = K::get_value(key).unwrap();
+        let key_value = K::from_command_value(key).unwrap();
         /* check if the record already exists */
         if self.table.records.contains_key(&key_value) {
             return Err(format!(
@@ -763,7 +763,11 @@ impl<'a: 'b, 'b> Command<'a, 'b> for AnyCommand<'a, 'b> {
 }
 
 impl DatabaseKey for String {
-    fn get_value(value: CommandValue) -> Option<Self> {
+    fn get_command_value(value: &Self) -> CommandValue<'_> {
+        CommandValue::String(value)
+    }
+
+    fn from_command_value(value: CommandValue) -> Option<Self> {
         match value {
             CommandValue::String(s) => Some(s.to_owned()),
             _ => None,
@@ -791,7 +795,11 @@ impl DatabaseKey for String {
 }
 
 impl DatabaseKey for i64 {
-    fn get_value(value: CommandValue) -> Option<Self> {
+    fn get_command_value(value: &Self) -> CommandValue<'_> {
+        CommandValue::Int(*value)
+    }
+
+    fn from_command_value(value: CommandValue) -> Option<Self> {
         match value {
             CommandValue::Int(i) => Some(i),
             _ => None,
@@ -822,7 +830,8 @@ where
     Self: std::fmt::Display,
     Self: 'static,
 {
-    fn get_value(value: CommandValue) -> Option<Self>;
+    fn get_command_value(value: &Self) -> CommandValue<'_>;
+    fn from_command_value(value: CommandValue) -> Option<Self>;
     fn field_type() -> FieldType;
     fn dbk_new() -> Self;
     fn is_equal_to(&self, other: &Self) -> bool;
@@ -843,13 +852,13 @@ mod tests {
         let mut create = parse_command(&mut any_db, "CREATE users KEY id FIELDS name: STRING, surname: STRING, age: INT, married: BOOL, credit_score: FLOAT").unwrap();
         create.execute().unwrap();
 
-        let mut insert = parse_command(&mut any_db,"INSERT id='1', name='Jan', surname='Kowalski', age=40, married=true, credit_score=7.8 INTO users").unwrap();
+        let mut insert = parse_command(&mut any_db, "INSERT id='1', name='Jan', surname='Kowalski', age=40, married=true, credit_score=7.8 INTO users").unwrap();
         insert.execute().unwrap();
 
-        let mut insert = parse_command(&mut any_db,"INSERT id='2', name='Ignacy', surname='Nowak', age=29, married=true, credit_score=6.4 INTO users").unwrap();
+        let mut insert = parse_command(&mut any_db, "INSERT id='2', name='Ignacy', surname='Nowak', age=29, married=true, credit_score=6.4 INTO users").unwrap();
         insert.execute().unwrap();
 
-        let mut insert = parse_command(&mut any_db,"INSERT id='3', name='Konrad', surname='Adenauer', age=91, married=true, credit_score=2.1 INTO users").unwrap();
+        let mut insert = parse_command(&mut any_db, "INSERT id='3', name='Konrad', surname='Adenauer', age=91, married=true, credit_score=2.1 INTO users").unwrap();
         insert.execute().unwrap();
 
         let StringDatabase(db) = any_db else {
