@@ -1,0 +1,7 @@
+[target.'cfg(all())']
+rustflags = [
+    "-Wclippy::unwrap_used",
+    "-Wclippy::expect_used",
+    "-Wclippy::too_many_lines",
+    "-Wclippy::panic",
+]
