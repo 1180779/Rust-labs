@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use proj_1::{AnyCommand, AnyDatabase, Command, CommandResult, parse_command};
+use memoria::{AnyCommand, AnyDatabase, Command, parse_command};
 use std::io;
 
 #[derive(Clone, Debug, ValueEnum)]

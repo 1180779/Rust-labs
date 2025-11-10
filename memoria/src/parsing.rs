@@ -4,8 +4,6 @@ use pest::iterators::Pair;
 use pest_derive::Parser;
 use std::cmp::PartialEq;
 
-// TODO: change .pest to be ascii independent
-
 #[derive(Parser)]
 #[grammar = "gramma.pest"]
 struct GrammaParser;

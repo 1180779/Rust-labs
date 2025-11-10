@@ -717,7 +717,13 @@ impl<'a, 'b> SelectResult<'a, 'b> {
     }
 
     /// Build a separator line with box-drawing characters
-    fn build_separator(widths: &[usize], left: char, mid: char, right: char, horiz: char) -> String {
+    fn build_separator(
+        widths: &[usize],
+        left: char,
+        mid: char,
+        right: char,
+        horiz: char,
+    ) -> String {
         let mut sep = String::new();
         sep.push(left);
         for (i, w) in widths.iter().enumerate() {
