@@ -6,6 +6,15 @@ use std::io::{Read, Write};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
+pub enum DbError {
+    #[error("execution error")]
+    ExecutionError(#[from] ExecutionError),
+
+    #[error("parsing error: {0}")]
+    ParseError(#[from] ParseError),
+}
+
+#[derive(Error, Debug, PartialEq)]
 pub enum ExecutionError {
     #[error("Invalid field: {0} for table: {1}")]
     InvalidField(String, String),
@@ -44,14 +53,9 @@ impl From<std::io::Error> for ExecutionError {
     }
 }
 
-pub mod error;
-pub mod parser;
 use crate::AnyDatabase::{IntDatabase, StringDatabase};
-use crate::error::DbError;
+pub mod parser;
 pub use parser::*;
-/////////////////////////////////////////////
-// owned query types
-/////////////////////////////////////////////
 
 #[derive(Debug)]
 pub enum AnyQueryOwned {

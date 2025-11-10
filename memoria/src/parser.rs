@@ -5,29 +5,45 @@ use pest_derive::Parser;
 use std::cmp::PartialEq;
 use thiserror::Error;
 
+/// Parse related error type.
 #[derive(Error, Debug, PartialEq)]
 pub enum ParseError {
+    /// Indicates that no valid parsing rule was found which is deemed illegal by the grammar.
     #[error("No rule found where it is illegal by grammar")]
     IllegalByGrammarEmpty,
+
+    /// Input encountered `Rule` that is deemed illegal by the grammar.
+    /// Carries the unexpected rule.
     #[error("Rule {:?} found where it is illegal by grammar", .0)]
     IllegalByGrammar(Rule),
+
+    /// Invalid conversion to an integer value.
     #[error("Illegal by grammar parsing error: {0}")]
     IllegalByGrammarParseIntError(#[from] std::num::ParseIntError),
+
+    /// Invalid string input that lacks proper string delimiters.
     #[error("Illegal by grammar parsing error: string without string delimiters")]
     IllegalByGrammarParseStringError,
+
+    /// Invalid conversion to a floating-point value.
     #[error("Illegal by grammar parsing error: {0}")]
     IllegalByGrammarParseFloatError(#[from] std::num::ParseFloatError),
+
+    /// Invalid conversion to a bool value.
     #[error("Illegal by grammar parsing error: {0}")]
     IllegalByGrammarParseBoolError(#[from] std::str::ParseBoolError),
 
+    /// Error originating from the `pest` library.
     #[error("{0}")]
     ParseError(#[from] Box<pest::error::Error<Rule>>),
 }
 
+/// Pest parser from query grammar
 #[derive(Parser)]
 #[grammar = "gramma.pest"]
 struct GrammaParser;
 
+/// Where clause comparison operator
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum Op {
     Eq,
@@ -52,9 +68,13 @@ impl Display for Op {
 }
 
 #[derive(Debug, PartialEq)]
+/// Represents a WHERE clause comparison used to filter records.
 pub struct Where<'a> {
+    /// Field name in the record to evaluate.
     pub field: &'a str,
+    /// Comparison operator.
     pub op: Op,
+    /// Value to compare against.
     pub value: CommandValue<'a>,
 }
 
@@ -81,6 +101,10 @@ impl<'a> PartialEq<CommandValue<'a>> for &Value {
 }
 
 impl Where<'_> {
+    /// Compare the provided `CommandValue` against the clause's stored value using
+    /// the clause operator.
+    ///
+    /// Returns `true` if the comparison holds, otherwise `false`.
     fn compare_value(&self, other: &CommandValue) -> bool {
         match self.op {
             Op::Eq => other == &self.value,
@@ -92,15 +116,21 @@ impl Where<'_> {
         }
     }
 
+    /// Apply the where-clause to a `Record`.
+    ///
+    /// Looks up the field named by the clause in `value.values`. If present,
+    /// converts the stored value into a `CommandValue` and compares it using
+    /// `compare_value`. Missing fields result in `false`.
     pub fn filter(&self, value: &Record) -> bool {
         value
             .values
             .get(self.field)
-            .map_or_else(|| None, |v| Some(self.compare_value(&v.into())))
+            .map(|v| self.compare_value(&v.into()))
             .unwrap_or(false)
     }
 }
 
+/// Parsed query AST encompassing all supported commands.
 #[derive(Debug, PartialEq)]
 pub enum Query<'a, K: DatabaseKey> {
     Create(CreateQuery<'a>),
@@ -147,12 +177,14 @@ impl<'a, K: DatabaseKey> From<ReadFromQuery<'a>> for Query<'a, K> {
     }
 }
 
+/// New field definition for a `CREATE` query.
 #[derive(Debug, PartialEq)]
 pub struct InsertValue<'a> {
     pub field: &'a str,
     pub value: CommandValue<'a>,
 }
 
+/// Database field type.
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum FieldType {
     Bool,
@@ -185,24 +217,28 @@ impl FieldType {
     }
 }
 
+/// `INSERT` query.
 #[derive(Debug, PartialEq)]
 pub struct InsertQuery<'a> {
     pub insert_values: Vec<InsertValue<'a>>,
     pub table: &'a str,
 }
 
+/// `DELETE` query.
 #[derive(Debug, PartialEq)]
 pub struct DeleteQuery<'a, K: DatabaseKey> {
     pub key: K,
     pub table: &'a str,
 }
 
+/// New field definition for `CREATE` query.
 #[derive(Debug, PartialEq)]
 pub struct NewField<'a> {
     pub field: &'a str,
     pub field_type: FieldType,
 }
 
+/// `CREATE` query.
 #[derive(Debug, PartialEq)]
 pub struct CreateQuery<'a> {
     pub table: &'a str,
@@ -210,6 +246,7 @@ pub struct CreateQuery<'a> {
     pub fields_types: Vec<NewField<'a>>,
 }
 
+/// `SELECT` query.
 #[derive(Debug, PartialEq)]
 pub struct SelectQuery<'a> {
     pub fields: SelectFields<'a>,
@@ -217,16 +254,19 @@ pub struct SelectQuery<'a> {
     pub where_clause: Option<Where<'a>>,
 }
 
+/// `SAVE_AS` query.
 #[derive(Debug, PartialEq)]
 pub struct SaveAsQuery<'a> {
     pub file: &'a str,
 }
 
+/// `READ_FROM` query.
 #[derive(Debug, PartialEq)]
 pub struct ReadFromQuery<'a> {
     pub file: &'a str,
 }
 
+/// Fields to be selected in a `SELECT` query.
 #[derive(Debug, PartialEq)]
 pub enum SelectFields<'a> {
     Fields(Vec<&'a str>),
@@ -298,7 +338,9 @@ fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_
     Ok(Where { field, op, value })
 }
 
-fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
+fn parse_query_s<K: DatabaseKey>(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, ParseError> {
     let mut fields = SelectFields::new();
     let mut table = "";
     let mut where_clause = None;
@@ -314,7 +356,7 @@ fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
                 table = inner.as_str();
             }
             Rule::where_clause => where_clause = Some(parse_query_where(inner.into_inner())?),
-            rule => return Err(ParseError::IllegalByGrammar(rule))
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
     Ok(Query::Select(SelectQuery {
@@ -349,7 +391,9 @@ fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
     fields_types
 }
 
-fn parse_query_c<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
+fn parse_query_c<K: DatabaseKey>(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, ParseError> {
     let mut table = "";
     let mut key_field = "";
     let mut fields_types = Vec::<NewField>::new();
@@ -364,7 +408,7 @@ fn parse_query_c<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
             Rule::fields_types => {
                 fields_types = parse_query_field_types(inner);
             }
-            rule => return Err(ParseError::IllegalByGrammar(rule))
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
     Ok(Query::Create(CreateQuery {
@@ -434,7 +478,9 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Pars
     Ok(InsertValue { field, value })
 }
 
-fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
+fn parse_query_i<K: DatabaseKey>(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, ParseError> {
     let mut table = "";
     let mut insert_values = Vec::<InsertValue>::new();
     for inner in pairs {
@@ -447,7 +493,7 @@ fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
                     insert_values.push(parse_query_field_value_setters(inner)?);
                 }
             }
-            rule => return Err(ParseError::IllegalByGrammar(rule))
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
     Ok(Query::Insert(InsertQuery {
@@ -456,9 +502,9 @@ fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
     }))
 }
 
-/// Parses a query from a `Pair<Rule>` and constructs a `Query<K>` object.
-/// It is assumed that Rule is of variant Rule::D (that is pair.as_rule() returns Rule::D
-fn parse_query_d<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
+fn parse_query_d<K: DatabaseKey>(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, ParseError> {
     let mut key: K = K::dbk_new();
     let mut table = "";
     for inner in pairs {
@@ -469,34 +515,22 @@ fn parse_query_d<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
             Rule::key_value => {
                 key = K::gramma_from_str(inner.as_str()).unwrap();
             }
-            rule => return Err(ParseError::IllegalByGrammar(rule))
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
         };
     }
     Ok(Query::Delete(DeleteQuery { key, table }))
 }
 
-fn parse_query_sa<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
+fn parse_query_sa_rf<K: DatabaseKey>(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query<K>, ParseError> {
     let mut file = "";
     for inner in pairs {
         match inner.as_rule() {
             Rule::file_path => {
                 file = inner.as_str();
-
-            },
-            rule => return Err(ParseError::IllegalByGrammar(rule))
-        }
-    }
-    Ok(Query::SaveAs(SaveAsQuery { file }))
-}
-
-fn parse_query_rf<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
-    let mut file = "";
-    for inner in pairs {
-        match inner.as_rule() {
-            Rule::file_path => {
-                file = inner.as_str();
-            },
-            rule => return Err(ParseError::IllegalByGrammar(rule))
+            }
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
     Ok(Query::ReadFrom(ReadFromQuery { file }))
@@ -518,8 +552,8 @@ pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, P
         Rule::C => parse_query_c(inner_pairs),
         Rule::I => parse_query_i(inner_pairs),
         Rule::D => parse_query_d(inner_pairs),
-        Rule::SA => parse_query_sa(inner_pairs),
-        Rule::RF => parse_query_rf(inner_pairs),
+        Rule::SA => parse_query_sa_rf(inner_pairs),
+        Rule::RF => parse_query_sa_rf(inner_pairs),
         rule => Err(ParseError::IllegalByGrammar(rule)),
     }
 }
