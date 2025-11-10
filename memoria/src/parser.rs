@@ -1,8 +1,9 @@
+use super::query::*;
 use super::*;
+use crate::query::borrowed::QueryBorrowed;
 use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
-use std::cmp::PartialEq;
 use thiserror::Error;
 
 /// Parse related error type.
@@ -48,164 +49,26 @@ pub enum ParseError {
 #[grammar = "gramma.pest"]
 struct GrammaParser;
 
-/// Where clause comparison operator
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum Op {
-    Eq,
-    Neq,
-    Greater,
-    GreaterEq,
-    Less,
-    LessEq,
+pub trait ParsableStrType<'a, K>: StrType {
+    fn from_pair(pair: &Pair<'a, Rule>) -> Self;
+    fn from_str(inner: &'a str) -> Self;
 }
 
-impl Display for Op {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Op::Eq => write!(f, "="),
-            Op::Neq => write!(f, "!="),
-            Op::Greater => write!(f, ">"),
-            Op::GreaterEq => write!(f, ">="),
-            Op::Less => write!(f, "<"),
-            Op::LessEq => write!(f, "<="),
-        }
+impl<'a> ParsableStrType<'a, &'a str> for &'a str {
+    fn from_pair(pair: &Pair<'a, Rule>) -> Self {
+        pair.as_str()
+    }
+    fn from_str(inner: &'a str) -> Self {
+        inner
     }
 }
 
-#[derive(Debug, PartialEq)]
-/// Represents a WHERE clause comparison used to filter records.
-pub struct Where<'a> {
-    /// Field name in the record to evaluate.
-    pub field: &'a str,
-    /// Comparison operator.
-    pub op: Op,
-    /// Value to compare against.
-    pub value: CommandValue<'a>,
-}
-
-impl<'a: 'b, 'b> From<&'b Where<'a>> for WhereOwned {
-    fn from(value: &'b Where<'a>) -> Self {
-        WhereOwned {
-            value: (&value.value).into(),
-            op: value.op,
-            field: value.field.into(),
-        }
+impl<'a> ParsableStrType<'a, String> for String {
+    fn from_pair(pair: &Pair<'a, Rule>) -> Self {
+        pair.as_str().to_string()
     }
-}
-
-impl<'a> PartialEq<CommandValue<'a>> for &Value {
-    fn eq(&self, other: &CommandValue) -> bool {
-        match (self, other) {
-            (Value::Int(a), CommandValue::Int(b)) => a == b,
-            (Value::Float(a), CommandValue::Float(b)) => a == b,
-            (Value::String(a), CommandValue::String(b)) => a == b,
-            (Value::Bool(a), CommandValue::Bool(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl Where<'_> {
-    /// Compare the provided `CommandValue` against the clause's stored value using
-    /// the clause operator.
-    ///
-    /// Returns `true` if the comparison holds, otherwise `false`.
-    fn compare_value(&self, other: &CommandValue) -> bool {
-        match self.op {
-            Op::Eq => other == &self.value,
-            Op::Neq => other != &self.value,
-            Op::LessEq => other <= &self.value,
-            Op::GreaterEq => other >= &self.value,
-            Op::Greater => other > &self.value,
-            Op::Less => other < &self.value,
-        }
-    }
-
-    /// Apply the where-clause to a `Record`.
-    ///
-    /// Looks up the field named by the clause in `value.values`. If present,
-    /// converts the stored value into a `CommandValue` and compares it using
-    /// `compare_value`. Missing fields result in `false`.
-    pub fn filter(&self, value: &Record) -> bool {
-        value
-            .values
-            .get(self.field)
-            .map(|v| self.compare_value(&v.into()))
-            .unwrap_or(false)
-    }
-}
-
-/// Parsed query AST encompassing all supported commands.
-#[derive(Debug, PartialEq)]
-pub enum Query<'a> {
-    Create(CreateQuery<'a>),
-    Delete(DeleteQuery<'a>),
-    Insert(InsertQuery<'a>),
-    Select(SelectQuery<'a>),
-    SaveAs(SaveAsQuery<'a>),
-    ReadFrom(ReadFromQuery<'a>),
-}
-
-impl<'a> From<CreateQuery<'a>> for Query<'a> {
-    fn from(value: CreateQuery<'a>) -> Self {
-        Query::Create(value)
-    }
-}
-
-impl<'a> From<DeleteQuery<'a>> for Query<'a> {
-    fn from(value: DeleteQuery<'a>) -> Self {
-        Query::Delete(value)
-    }
-}
-
-impl<'a> From<InsertQuery<'a>> for Query<'a> {
-    fn from(value: InsertQuery<'a>) -> Self {
-        Query::Insert(value)
-    }
-}
-
-impl<'a> From<SelectQuery<'a>> for Query<'a> {
-    fn from(value: SelectQuery<'a>) -> Self {
-        Query::Select(value)
-    }
-}
-
-impl<'a> From<SaveAsQuery<'a>> for Query<'a> {
-    fn from(value: SaveAsQuery<'a>) -> Self {
-        Query::SaveAs(value)
-    }
-}
-
-impl<'a> From<ReadFromQuery<'a>> for Query<'a> {
-    fn from(value: ReadFromQuery<'a>) -> Self {
-        Query::ReadFrom(value)
-    }
-}
-
-/// New field definition for a `CREATE` query.
-#[derive(Debug, PartialEq)]
-pub struct InsertValue<'a> {
-    pub field: &'a str,
-    pub value: CommandValue<'a>,
-}
-
-/// Database field type.
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum FieldType {
-    Bool,
-    String,
-    Int,
-    Float,
-}
-
-impl Display for FieldType {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FieldType::Bool => write!(f, "BOOL"),
-            FieldType::String => write!(f, "STRING"),
-            FieldType::Int => write!(f, "INT"),
-            FieldType::Float => write!(f, "FLOAT"),
-        }
+    fn from_str(inner: &'a str) -> Self {
+        inner.to_string()
     }
 }
 
@@ -222,88 +85,10 @@ impl FieldType {
     }
 }
 
-/// `INSERT` query.
-#[derive(Debug, PartialEq)]
-pub struct InsertQuery<'a> {
-    pub insert_values: Vec<InsertValue<'a>>,
-    pub table: &'a str,
-}
-
-/// `DELETE` query.
-#[derive(Debug, PartialEq)]
-pub struct DeleteQuery<'a> {
-    pub key: CommandValue<'a>,
-    pub table: &'a str,
-}
-
-/// New field definition for `CREATE` query.
-#[derive(Debug, PartialEq)]
-pub struct NewField<'a> {
-    pub field: &'a str,
-    pub field_type: FieldType,
-}
-
-/// `CREATE` query.
-#[derive(Debug, PartialEq)]
-pub struct CreateQuery<'a> {
-    pub table: &'a str,
-    pub key_field: &'a str,
-    pub fields_types: Vec<NewField<'a>>,
-}
-
-/// `SELECT` query.
-#[derive(Debug, PartialEq)]
-pub struct SelectQuery<'a> {
-    pub fields: SelectFields<'a>,
-    pub table: &'a str,
-    pub where_clause: Option<Where<'a>>,
-}
-
-/// `SAVE_AS` query.
-#[derive(Debug, PartialEq)]
-pub struct SaveAsQuery<'a> {
-    pub file: &'a str,
-}
-
-/// `READ_FROM` query.
-#[derive(Debug, PartialEq)]
-pub struct ReadFromQuery<'a> {
-    pub file: &'a str,
-}
-
-/// Fields to be selected in a `SELECT` query.
-#[derive(Debug, PartialEq)]
-pub enum SelectFields<'a> {
-    Fields(Vec<&'a str>),
-    AllFields(),
-}
-
-impl<'a> Default for SelectFields<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl<'a> SelectFields<'a> {
-    pub fn from(v: Vec<&str>) -> SelectFields<'_> {
-        SelectFields::Fields(v)
-    }
-
-    pub fn new() -> Self {
-        SelectFields::Fields(Vec::new())
-    }
-
-    pub fn new_all() -> Self {
-        SelectFields::AllFields()
-    }
-}
-
-fn parse_query_field(pair: Pair<'_, Rule>) -> &str {
-    pair.as_str()
-}
-
-fn parse_query_fields(pairs: pest::iterators::Pairs<'_, Rule>) -> Vec<&str> {
-    pairs.map(|pair| parse_query_field(pair)).collect()
+fn parse_query_fields<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Vec<K> {
+    pairs.map(|pair| K::from_pair(&pair)).collect()
 }
 
 fn parse_query_op(pair: Pair<'_, Rule>) -> Option<Op> {
@@ -318,15 +103,17 @@ fn parse_query_op(pair: Pair<'_, Rule>) -> Option<Op> {
     }
 }
 
-fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_>, ParseError> {
-    let mut field = "";
+fn parse_query_where<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Where<K>, ParseError> {
+    let mut field = K::default();
     let mut op: Op = Op::Eq;
-    let mut value: CommandValue = CommandValue::Int(0);
+    let mut value: Value<K> = Value::Int(0);
 
     for inner in pairs {
         match inner.as_rule() {
             Rule::field => {
-                field = parse_query_field(inner);
+                field = K::from_pair(&inner);
             }
             Rule::op => {
                 let parsed_op = parse_query_op(inner);
@@ -343,11 +130,11 @@ fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_
     Ok(Where { field, op, value })
 }
 
-fn parse_query_s(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query, ParseError> {
+fn parse_query_s<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Query<K>, ParseError> {
     let mut fields = SelectFields::new();
-    let mut table = "";
+    let mut table = K::default();
     let mut where_clause = None;
     for inner in pairs {
         match inner.as_rule() {
@@ -358,7 +145,7 @@ fn parse_query_s(
                 fields = SelectFields::AllFields();
             }
             Rule::table => {
-                table = inner.as_str();
+                table = K::from_pair(&inner);
             }
             Rule::where_clause => where_clause = Some(parse_query_where(inner.into_inner())?),
             rule => return Err(ParseError::IllegalByGrammar(rule)),
@@ -371,20 +158,22 @@ fn parse_query_s(
     }))
 }
 
-fn parse_query_field_types(pair: Pair<Rule>) -> Result<Vec<NewField>, ParseError> {
-    let mut fields_types = Vec::<NewField>::new();
+fn parse_query_field_types<'a, K: ParsableStrType<'a, K>>(
+    pair: Pair<'a, Rule>,
+) -> Result<Vec<NewField<K>>, ParseError> {
+    let mut fields_types = Vec::<NewField<K>>::new();
     for inner in pair.into_inner() {
         if inner.as_rule() == Rule::field_type {
-            let mut field_name = "";
+            let mut field_name = K::default();
             let mut field_type = FieldType::String;
 
             for inner_inner in inner.into_inner() {
                 match inner_inner.as_rule() {
                     Rule::field => {
-                        field_name = inner_inner.as_str();
+                        field_name = K::from_pair(&inner_inner);
                     }
                     Rule::ftype => field_type = FieldType::from_pair(&inner_inner)?,
-                    rule => return Err(ParseError::IllegalByGrammar(rule))
+                    rule => return Err(ParseError::IllegalByGrammar(rule)),
                 }
             }
             fields_types.push(NewField {
@@ -396,19 +185,19 @@ fn parse_query_field_types(pair: Pair<Rule>) -> Result<Vec<NewField>, ParseError
     Ok(fields_types)
 }
 
-fn parse_query_c(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query, ParseError> {
-    let mut table = "";
-    let mut key_field = "";
-    let mut fields_types = Vec::<NewField>::new();
+fn parse_query_c<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Query<K>, ParseError> {
+    let mut table = K::default();
+    let mut key_field = K::default();
+    let mut fields_types = Vec::<NewField<K>>::new();
     for inner in pairs {
         match inner.as_rule() {
             Rule::table => {
-                table = inner.as_str();
+                table = K::from_pair(&inner);
             }
             Rule::field => {
-                key_field = inner.as_str();
+                key_field = K::from_pair(&inner);
             }
             Rule::fields_types => {
                 fields_types = parse_query_field_types(inner)?;
@@ -419,37 +208,46 @@ fn parse_query_c(
     Ok(Query::Create(CreateQuery {
         table,
         key_field,
-        fields_types,
+        fields_types: NewFields(fields_types),
     }))
 }
 
-fn parse_query_field_value_bool(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
+fn parse_query_field_value_bool<'a, K: ParsableStrType<'a, K>>(
+    pair: Pair<'a, Rule>,
+) -> Result<Value<K>, ParseError> {
     let parsed = pair.as_str().to_lowercase().parse();
-    Ok(CommandValue::Bool(parsed?))
+    Ok(Value::Bool(parsed?))
 }
 
-fn parse_query_field_value_string(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
-    if pair.as_str().len() < 2 {
+fn parse_query_field_value_string<'a, K: ParsableStrType<'a, K>>(
+    pair: Pair<'a, Rule>,
+) -> Result<Value<K>, ParseError> {
+    let s = pair.as_str();
+    if s.len() < 2 {
         return Err(ParseError::IllegalByGrammarParseStringError);
     }
-    Ok(CommandValue::String(
-        &pair.as_str()[1..pair.as_str().len() - 1],
-    ))
+    let inner = &s[1..s.len() - 1];
+    let v = K::from_str(inner);
+    Ok(Value::String(v))
 }
 
-fn parse_query_field_value_int(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
+fn parse_query_field_value_int<'a, K: ParsableStrType<'a, K>>(
+    pair: Pair<Rule>,
+) -> Result<Value<K>, ParseError> {
     let parsed = pair.as_str().parse();
-    Ok(CommandValue::Int(parsed?))
+    Ok(Value::Int(parsed?))
 }
 
-fn parse_query_field_value_float(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
+fn parse_query_field_value_float<'a, K: ParsableStrType<'a, K>>(
+    pair: Pair<Rule>,
+) -> Result<Value<K>, ParseError> {
     let parsed = pair.as_str().parse();
-    Ok(CommandValue::Float(parsed?))
+    Ok(Value::Float(parsed?))
 }
 
-fn parse_query_field_value(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<CommandValue, ParseError> {
+fn parse_query_field_value<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Value<K>, ParseError> {
     let empty_err = || Err(ParseError::IllegalByGrammarEmpty);
 
     pairs
@@ -464,14 +262,16 @@ fn parse_query_field_value(
         })
 }
 
-fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, ParseError> {
+fn parse_query_field_value_setters<'a, K: ParsableStrType<'a, K>>(
+    pair: Pair<'a, Rule>,
+) -> Result<InsertValue<K>, ParseError> {
     let inner_inner = pair.into_inner();
-    let mut field = "";
-    let mut value = CommandValue::String("");
+    let mut field = K::default();
+    let mut value = Value::String(K::default());
     for inner_inner in inner_inner {
         match inner_inner.as_rule() {
             Rule::field => {
-                field = inner_inner.as_str();
+                field = K::from_pair(&inner_inner);
             }
             Rule::field_value => {
                 value = parse_query_field_value(inner_inner.into_inner())?;
@@ -483,15 +283,15 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Pars
     Ok(InsertValue { field, value })
 }
 
-fn parse_query_i(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query, ParseError> {
-    let mut table = "";
-    let mut insert_values = Vec::<InsertValue>::new();
+fn parse_query_i<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Query<K>, ParseError> {
+    let mut table = K::default();
+    let mut insert_values = Vec::<InsertValue<K>>::new();
     for inner in pairs {
         match inner.as_rule() {
             Rule::table => {
-                table = inner.as_str();
+                table = K::from_pair(&inner);
             }
             Rule::field_value_setters => {
                 for inner in inner.into_inner() {
@@ -507,15 +307,15 @@ fn parse_query_i(
     }))
 }
 
-fn parse_query_d(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query, ParseError> {
-    let mut key = CommandValue::Int(0);
-    let mut table = "";
+fn parse_query_d<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Query<K>, ParseError> {
+    let mut key = Value::Int(0);
+    let mut table = K::default();
     for inner in pairs {
         match inner.as_rule() {
             Rule::table => {
-                table = inner.as_str();
+                table = K::from_pair(&inner);
             }
             Rule::key_value => {
                 key = parse_query_field_value(inner.into_inner())?;
@@ -526,12 +326,14 @@ fn parse_query_d(
     Ok(Query::Delete(DeleteQuery { key, table }))
 }
 
-fn parse_query_sa_rf(pairs: pest::iterators::Pairs<Rule>) -> Result<&str, ParseError> {
-    let mut file = "";
+fn parse_query_sa_rf<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<K, ParseError> {
+    let mut file = K::default();
     for inner in pairs {
         match inner.as_rule() {
             Rule::file_path => {
-                file = inner.as_str();
+                file = K::from_pair(&inner);
             }
             rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
@@ -539,22 +341,22 @@ fn parse_query_sa_rf(pairs: pest::iterators::Pairs<Rule>) -> Result<&str, ParseE
     Ok(file)
 }
 
-fn parse_query_sa(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query, ParseError> {
+fn parse_query_sa<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Query<K>, ParseError> {
     let file = parse_query_sa_rf(pairs)?;
     Ok(Query::SaveAs(SaveAsQuery { file }))
 }
 
-fn parse_query_rf(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query, ParseError> {
+fn parse_query_rf<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Query<K>, ParseError> {
     let file = parse_query_sa_rf(pairs)?;
     Ok(Query::ReadFrom(ReadFromQuery { file }))
 }
 
 /// Parse input query and translate the results into internal command representation
-pub(crate) fn parse_query(query: &str) -> Result<Query<'_>, ParseError> {
+pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed, ParseError> {
     let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(Box::new)?;
 
     let query_pair = pairs
@@ -581,7 +383,7 @@ mod tests {
     #[test]
     fn select_all() {
         let select = "SELECT * FROM table";
-        let expected_result = Query::Select(SelectQuery {
+        let expected_result = QueryBorrowed::Select(SelectQuery {
             table: "table",
             fields: SelectFields::AllFields(),
             where_clause: None,
@@ -593,13 +395,13 @@ mod tests {
     #[test]
     fn select_all_where() {
         let select = "SELECT * FROM table WHERE avg_rating > 4.5";
-        let expected_result = Query::Select(SelectQuery {
+        let expected_result = QueryBorrowed::Select(SelectQuery {
             table: "table",
             fields: SelectFields::AllFields(),
             where_clause: Some(Where {
                 field: "avg_rating",
                 op: Op::Greater,
-                value: CommandValue::Float(4.5),
+                value: Value::Float(4.5),
             }),
         });
         let result = parse_query(select).unwrap();
@@ -609,7 +411,7 @@ mod tests {
     #[test]
     fn select_one_field() {
         let select = "SELECT field1 FROM table";
-        let expected_result = Query::Select(SelectQuery {
+        let expected_result = QueryBorrowed::Select(SelectQuery {
             table: "table",
             fields: SelectFields::Fields(vec!["field1"]),
             where_clause: None,
@@ -621,13 +423,13 @@ mod tests {
     #[test]
     fn select_one_field_where() {
         let select = "SELECT field1 FROM table WHERE id <= 10";
-        let expected_result = Query::Select(SelectQuery {
+        let expected_result = QueryBorrowed::Select(SelectQuery {
             table: "table",
             fields: SelectFields::Fields(vec!["field1"]),
             where_clause: Some(Where {
                 field: "id",
                 op: Op::LessEq,
-                value: CommandValue::Int(10),
+                value: Value::Int(10),
             }),
         });
         let result = parse_query(select).unwrap();
@@ -637,7 +439,7 @@ mod tests {
     #[test]
     fn select_multiple_fields() {
         let select = "SELECT field1, field2, field3 FROM my_table";
-        let expected_result = Query::Select(SelectQuery {
+        let expected_result = QueryBorrowed::Select(SelectQuery {
             table: "my_table",
             fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
             where_clause: None,
@@ -649,13 +451,13 @@ mod tests {
     #[test]
     fn create_single_field() {
         let create_query = "CREATE users KEY id FIELDS name: STRING";
-        let expected_result = Query::Create(CreateQuery {
+        let expected_result = QueryBorrowed::Create(CreateQuery {
             table: "users",
             key_field: "id",
-            fields_types: vec![NewField {
+            fields_types: NewFields(vec![NewField {
                 field: "name",
                 field_type: FieldType::String,
-            }],
+            }]),
         });
         let result = parse_query(create_query).unwrap();
         assert_eq!(result, expected_result);
@@ -664,10 +466,10 @@ mod tests {
     #[test]
     fn create_multiple_fields() {
         let create_query = "CREATE products KEY sku FIELDS name: STRING, price: FLOAT, stock: INT";
-        let expected_result = Query::Create(CreateQuery {
+        let expected_result = QueryBorrowed::Create(CreateQuery {
             table: "products",
             key_field: "sku",
-            fields_types: vec![
+            fields_types: NewFields(vec![
                 NewField {
                     field: "name",
                     field_type: FieldType::String,
@@ -680,7 +482,7 @@ mod tests {
                     field: "stock",
                     field_type: FieldType::Int,
                 },
-            ],
+            ]),
         });
         let result = parse_query(create_query).unwrap();
         assert_eq!(result, expected_result);
@@ -695,19 +497,19 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "name",
-                    value: CommandValue::String("test_user"),
+                    value: Value::String("test_user"),
                 },
                 InsertValue {
                     field: "age",
-                    value: CommandValue::Int(30),
+                    value: Value::Int(30),
                 },
                 InsertValue {
                     field: "active",
-                    value: CommandValue::Bool(true),
+                    value: Value::Bool(true),
                 },
                 InsertValue {
                     field: "score",
-                    value: CommandValue::Float(99.5),
+                    value: Value::Float(99.5),
                 },
             ],
         });
@@ -723,11 +525,11 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "temperature",
-                    value: CommandValue::Float(-10.5),
+                    value: Value::Float(-10.5),
                 },
                 InsertValue {
                     field: "balance",
-                    value: CommandValue::Int(-50),
+                    value: Value::Int(-50),
                 },
             ],
         });
@@ -739,7 +541,7 @@ mod tests {
     fn delete_string_key() {
         let delete_query = "DELETE 'user-123-abc' FROM users";
         let expected_result = Query::Delete(DeleteQuery {
-            key: CommandValue::String("user-123-abc"),
+            key: Value::String("user-123-abc"),
             table: "users",
         });
         let result = parse_query(delete_query).unwrap();
@@ -750,7 +552,7 @@ mod tests {
     fn delete_int_key() {
         let delete_query = "DELETE 42 FROM products";
         let expected_result = Query::Delete(DeleteQuery {
-            key: CommandValue::Int(42),
+            key: Value::Int(42),
             table: "products",
         });
         let result = parse_query(delete_query).unwrap();

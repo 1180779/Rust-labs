@@ -57,374 +57,69 @@ impl From<std::io::Error> for ExecutionError {
 }
 
 use crate::AnyDatabase::{IntDatabase, StringDatabase};
+
+mod query;
 pub mod parser;
+
 pub use parser::*;
-
-#[derive(Debug)]
-pub enum QueryOwned {
-    Create(CreateQueryOwned),
-    Delete(DeleteQueryOwned),
-    Insert(InsertQueryOwned),
-    Select(SelectQueryOwned),
-    SaveAs(SaveAsQueryOwned),
-    ReadFrom(ReadFromQueryOwned),
-}
-
-impl Display for QueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            QueryOwned::Select(query) => write!(f, "{}", query),
-            QueryOwned::Create(query) => write!(f, "{}", query),
-            QueryOwned::Delete(query) => write!(f, "{}", query),
-            QueryOwned::Insert(query) => write!(f, "{}", query),
-            QueryOwned::SaveAs(query) => write!(f, "{}", query),
-            QueryOwned::ReadFrom(query) => write!(f, "{}", query),
-        }
-    }
-}
-
-impl Display for SelectQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match &self.where_clause {
-            Some(where_clause) => write!(
-                f,
-                "SELECT {} FROM {} WHERE {}",
-                self.fields, self.table, where_clause
-            ),
-            None => write!(f, "SELECT {} FROM {}", self.fields, self.table),
-        }
-    }
-}
-
-impl Display for CreateQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CREATE {} KEY {} FIELDS {}",
-            self.table, self.key_field, self.fields_types
-        )
-    }
-}
-
-impl Display for InsertQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "INSERT ")?;
-        if self.insert_values.len() == 1 {
-            write!(f, "{}", self.insert_values[0])?;
-        } else {
-            for v in &self.insert_values[0..self.insert_values.len()] {
-                write!(f, "{}, ", v)?
-            }
-            write!(f, "{}", self.insert_values[self.insert_values.len() - 1])?;
-        }
-        write!(f, "INTO {}", self.table)
-    }
-}
-
-impl Display for DeleteQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "DELETE {} FROM {}", self.key, self.table)
-    }
-}
-
-impl Display for SaveAsQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SAVE_AS {}", self.file)
-    }
-}
-
-impl Display for ReadFromQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "READ_FROM {}", self.file)
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct NewFields(Vec<NewFieldOwned>);
-
-impl Display for NewFields {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self.0.len() {
-            0 => write!(f, ""),
-            1 => write!(f, "{}", self.0[0]),
-            _ => {
-                for v in &self.0[0..self.0.len() - 1] {
-                    write!(f, "{}, ", v)?;
-                }
-                write!(f, "{}", self.0[self.0.len() - 1])
-            }
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct CreateQueryOwned {
-    pub table: String,
-    pub key_field: String,
-    pub fields_types: NewFields,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct DeleteQueryOwned {
-    pub key: Value,
-    pub table: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct InsertQueryOwned {
-    pub insert_values: Vec<InsertValueOwned>,
-    pub table: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SelectQueryOwned {
-    pub fields: SelectFieldsOwned,
-    pub table: String,
-    pub where_clause: Option<WhereOwned>,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct WhereOwned {
-    pub field: String,
-    pub op: Op,
-    pub value: Value,
-}
-
-impl Display for WhereOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} {} {}", self.field, self.op, self.value)
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct SaveAsQueryOwned {
-    pub file: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ReadFromQueryOwned {
-    pub file: String,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct NewFieldOwned {
-    pub field: String,
-    pub field_type: FieldType,
-}
-
-impl Display for NewFieldOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.field, self.field_type)
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum SelectFieldsOwned {
-    Fields(Vec<String>),
-    AllFields(),
-}
-
-impl Display for SelectFieldsOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SelectFieldsOwned::Fields(fields) => match fields.len() {
-                0 => write!(f, ""),
-                1 => write!(f, "{}", fields[0]),
-                _ => {
-                    for v in &fields[0..fields.len() - 1] {
-                        write!(f, "{}, ", v)?;
-                    }
-                    write!(f, "{}", fields[fields.len() - 1])
-                }
-            },
-            SelectFieldsOwned::AllFields() => {
-                write!(f, "*")
-            }
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub struct InsertValueOwned {
-    pub field: String,
-    pub value: Value,
-}
-
-impl Display for InsertValueOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}={}", self.field, self.value)
-    }
-}
-
-impl<'a, 'b> From<&'b InsertValue<'a>> for InsertValueOwned {
-    fn from(value: &'b InsertValue) -> Self {
-        InsertValueOwned {
-            field: value.field.into(),
-            value: (&value.value).into(),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b CommandValue<'a>> for Value {
-    fn from(value: &'b CommandValue) -> Self {
-        match value {
-            CommandValue::Bool(b) => Value::Bool(*b),
-            CommandValue::String(s) => Value::String((*s).into()),
-            CommandValue::Int(i) => Value::Int(*i),
-            CommandValue::Float(f) => Value::Float(*f),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b NewField<'a>> for NewFieldOwned {
-    fn from(value: &'b NewField<'a>) -> Self {
-        NewFieldOwned {
-            field: value.field.into(),
-            field_type: value.field_type,
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b SelectFields<'a>> for SelectFieldsOwned {
-    fn from(value: &'b SelectFields<'a>) -> Self {
-        match value {
-            SelectFields::AllFields() => SelectFieldsOwned::AllFields(),
-            SelectFields::Fields(fields) => {
-                SelectFieldsOwned::Fields(fields.iter().map(|s| (*s).into()).collect())
-            }
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b CreateQuery<'a>> for CreateQueryOwned {
-    fn from(value: &'b CreateQuery<'a>) -> Self {
-        CreateQueryOwned {
-            table: value.table.into(),
-            key_field: value.key_field.into(),
-            fields_types: NewFields(value.fields_types.iter().map(|t| t.into()).collect()),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b DeleteQuery<'a>> for DeleteQueryOwned {
-    fn from(value: &'b DeleteQuery<'a>) -> Self {
-        DeleteQueryOwned {
-            table: value.table.into(),
-            key: (&value.key).into(),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b InsertQuery<'a>> for InsertQueryOwned {
-    fn from(value: &'b InsertQuery<'a>) -> Self {
-        InsertQueryOwned {
-            table: value.table.into(),
-            insert_values: value.insert_values.iter().map(|v| v.into()).collect(),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b SelectQuery<'a>> for SelectQueryOwned {
-    fn from(value: &'b SelectQuery<'a>) -> Self {
-        SelectQueryOwned {
-            table: value.table.into(),
-            fields: (&value.fields).into(),
-            where_clause: value
-                .where_clause
-                .as_ref()
-                .map(|where_clause| where_clause.into()),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b SaveAsQuery<'a>> for SaveAsQueryOwned {
-    fn from(value: &'b SaveAsQuery<'a>) -> Self {
-        SaveAsQueryOwned {
-            file: value.file.into(),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b ReadFromQuery<'a>> for ReadFromQueryOwned {
-    fn from(value: &'b ReadFromQuery<'a>) -> Self {
-        ReadFromQueryOwned {
-            file: value.file.into(),
-        }
-    }
-}
-
-impl<'a: 'b, 'b> From<&'b Query<'a>> for QueryOwned {
-    fn from(value: &'b Query<'a>) -> Self {
-        match value {
-            Query::Select(q) => QueryOwned::Select(q.into()),
-            Query::Delete(q) => QueryOwned::Delete(q.into()),
-            Query::Insert(q) => QueryOwned::Insert(q.into()),
-            Query::Create(q) => QueryOwned::Create(q.into()),
-            Query::SaveAs(q) => QueryOwned::SaveAs(q.into()),
-            Query::ReadFrom(q) => QueryOwned::ReadFrom(q.into()),
-        }
-    }
-}
-
-/////////////////////////////////////////////
-// rest
-/////////////////////////////////////////////
+use query::*;
+use crate::query::borrowed::*;
 
 #[derive(Debug)]
 pub struct SelectCommand<'a, 'b, K: DatabaseKey> {
     pub table: &'a Table<K>,
-    pub query: SelectQuery<'b>,
+    pub query: SelectQueryBorrowed<'b>,
 }
 
 #[derive(Debug)]
 pub struct InsertCommand<'a, 'b, K: DatabaseKey> {
     pub table: &'a mut Table<K>,
-    pub query: InsertQuery<'b>,
+    pub query: InsertQueryBorrowed<'b>,
 }
 
 #[derive(Debug)]
 pub struct CreateCommand<'a, 'b, K: DatabaseKey> {
     pub db: &'a mut Database<K>,
-    pub query: CreateQuery<'b>,
+    pub query: CreateQueryBorrowed<'b>,
 }
 
 #[derive(Debug)]
 pub struct SaveAsCommand<'a, 'b, K: DatabaseKey> {
     db: &'a Database<K>,
-    pub query: SaveAsQuery<'b>,
+    pub query: SaveAsQueryBorrowed<'b>,
 }
 
 #[derive(Debug)]
 pub struct ReadFromCommand<'a, 'b, K: DatabaseKey> {
     db: &'a mut Database<K>,
-    pub query: ReadFromQuery<'b>,
+    pub query: ReadFromQueryBorrowed<'b>,
 }
 
 #[derive(Debug)]
 pub struct DeleteCommand<'a, 'b, K: DatabaseKey> {
     pub table: &'a mut Table<K>,
-    pub query: DeleteQuery<'b>,
+    pub query: DeleteQueryBorrowed<'b>,
 }
 
 #[derive(Debug)]
 pub enum AnyCommandInternal<'a, 'b, K: DatabaseKey> {
+    Create(CreateCommand<'a, 'b, K>),
     Select(SelectCommand<'a, 'b, K>),
     Insert(InsertCommand<'a, 'b, K>),
-    Create(CreateCommand<'a, 'b, K>),
     Delete(DeleteCommand<'a, 'b, K>),
     SaveAs(SaveAsCommand<'a, 'b, K>),
     ReadFrom(ReadFromCommand<'a, 'b, K>),
 }
 
 impl<'a, 'b, K: DatabaseKey> AnyCommandInternal<'a, 'b, K> {
-    pub fn query(self) -> Query<'b> {
+    pub fn query(self) -> QueryBorrowed<'b> {
         match self {
-            AnyCommandInternal::Select(c) => c.query.into(),
-            AnyCommandInternal::Create(c) => c.query.into(),
-            AnyCommandInternal::Insert(c) => c.query.into(),
-            AnyCommandInternal::Delete(c) => c.query.into(),
-            AnyCommandInternal::SaveAs(c) => c.query.into(),
-            AnyCommandInternal::ReadFrom(c) => c.query.into(),
+            AnyCommandInternal::Create(c) => QueryBorrowed::Create(c.query),
+            AnyCommandInternal::Select(c) => QueryBorrowed::Select(c.query),
+            AnyCommandInternal::Insert(c) => QueryBorrowed::Insert(c.query),
+            AnyCommandInternal::Delete(c) => QueryBorrowed::Delete(c.query),
+            AnyCommandInternal::SaveAs(c) => QueryBorrowed::SaveAs(c.query),
+            AnyCommandInternal::ReadFrom(c) => QueryBorrowed::ReadFrom(c.query),
         }
     }
 }
@@ -436,7 +131,7 @@ pub enum AnyCommand<'a, 'b> {
 }
 
 impl<'a, 'b> AnyCommand<'a, 'b> {
-    pub fn query(self) -> Query<'b> {
+    pub fn query(self) -> QueryBorrowed<'b> {
         match self {
             AnyCommand::StringCommand(c) => c.query(),
             AnyCommand::IntCommand(c) => c.query(),
@@ -446,14 +141,14 @@ impl<'a, 'b> AnyCommand<'a, 'b> {
 
 fn parse_command_create<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
-    query: CreateQuery<'b>,
+    query: CreateQueryBorrowed<'b>,
 ) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     Ok(AnyCommandInternal::Create(CreateCommand { db, query }))
 }
 
 fn parse_command_select<'a, 'b, K: DatabaseKey>(
     db: &'a Database<K>,
-    query: SelectQuery<'b>,
+    query: SelectQueryBorrowed<'b>,
 ) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get(query.table);
     match table {
@@ -464,7 +159,7 @@ fn parse_command_select<'a, 'b, K: DatabaseKey>(
 
 fn parse_command_insert<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
-    query: InsertQuery<'b>,
+    query: InsertQueryBorrowed<'b>,
 ) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get_mut(query.table);
     match table {
@@ -475,7 +170,7 @@ fn parse_command_insert<'a, 'b, K: DatabaseKey>(
 
 fn parse_command_delete<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
-    query: DeleteQuery<'b>,
+    query: DeleteQueryBorrowed<'b>,
 ) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get_mut(query.table);
     match table {
@@ -509,100 +204,15 @@ pub fn parse_command<'a, 'b>(
     }
 }
 
-#[derive(Debug, PartialOrd, Clone)]
-pub enum CommandValue<'a> {
-    Bool(bool),
-    String(&'a str),
-    Int(i64),
-    Float(f64),
-}
 
-impl<'a> Display for CommandValue<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CommandValue::Bool(v) => write!(f, "{}", v),
-            CommandValue::String(v) => write!(f, "\"{}\"", v),
-            CommandValue::Int(v) => write!(f, "{}", v),
-            CommandValue::Float(v) => write!(f, "{}", v),
-        }
-    }
-}
-
-const FLOAT_EPSILON: f64 = 1e-10;
-
-impl<'a> PartialEq for CommandValue<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (CommandValue::Float(a), CommandValue::Float(b)) => (a - b).abs() < FLOAT_EPSILON,
-            (CommandValue::Bool(a), CommandValue::Bool(b)) => a == b,
-            (CommandValue::String(a), CommandValue::String(b)) => a == b,
-            (CommandValue::Int(a), CommandValue::Int(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-impl CommandValue<'_> {
-    fn field_type(&self) -> FieldType {
-        match self {
-            CommandValue::Bool(_) => FieldType::Bool,
-            CommandValue::String(_) => FieldType::String,
-            CommandValue::Int(_) => FieldType::Int,
-            CommandValue::Float(_) => FieldType::Float,
-        }
-    }
-}
-
-impl<'a> From<&'a Value> for CommandValue<'a> {
-    fn from(value: &'a Value) -> Self {
-        match value {
-            Value::Bool(v) => CommandValue::Bool(*v),
-            Value::String(v) => CommandValue::String(v.as_str()),
-            Value::Int(v) => CommandValue::Int(*v),
-            Value::Float(v) => CommandValue::Float(*v),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum Value {
-    Bool(bool),
-    String(String),
-    Int(i64),
-    Float(f64),
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Bool(v) => write!(f, "{}", v),
-            Value::String(v) => write!(f, "\"{}\"", v),
-            Value::Int(v) => write!(f, "{}", v),
-            Value::Float(v) => write!(f, "{}", v),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct CommandRecord<'a> {
-    values: Vec<CommandValue<'a>>,
-}
 
 #[derive(Debug, Clone)]
 pub struct Record {
-    values: HashMap<String, Value>,
-}
-
-impl<'a> From<&'a Record> for CommandRecord<'a> {
-    fn from(value: &'a Record) -> Self {
-        CommandRecord {
-            values: value.values.iter().map(|v| v.1.into()).collect(),
-        }
-    }
+    values: HashMap<String, Value<String>>,
 }
 
 #[derive(Debug)]
-struct CommandHistory(Vec<QueryOwned>);
+struct CommandHistory(Vec<Query<String>>);
 
 impl CommandHistory {
     fn new() -> Self {
@@ -645,7 +255,7 @@ impl<K: DatabaseKey> Database<K> {
         }
     }
 
-    pub fn history_push(&mut self, query: QueryOwned) {
+    pub fn history_push(&mut self, query: Query<String>) {
         self.command_history.0.push(query);
     }
 }
@@ -672,7 +282,7 @@ impl AnyDatabase {
         IntDatabase(Database::new())
     }
 
-    pub fn history_push(&mut self, query: QueryOwned) {
+    pub fn history_push(&mut self, query: Query<String>) {
         match self {
             StringDatabase(database) => {
                 database.command_history.0.push(query);
@@ -684,22 +294,7 @@ impl AnyDatabase {
     }
 }
 
-#[derive(Debug)]
-pub struct SelectResult<'a, 'b> {
-    fields: Vec<&'b str>,
-    records: Vec<CommandRecord<'a>>,
-}
-
-impl<'a, 'b> SelectResult<'a, 'b> {
-    fn command_value_to_string(cv: &CommandValue<'_>) -> String {
-        match cv {
-            CommandValue::Bool(b) => format!("{}", b),
-            CommandValue::String(s) => s.to_string(),
-            CommandValue::Int(i) => format!("{}", i),
-            CommandValue::Float(fl) => format!("{}", fl),
-        }
-    }
-
+impl<K: StrType, L: StrType> SelectResult<K, L> {
     fn pad_cell(s: &str, width: usize) -> String {
         let mut out = String::new();
         out.push(' ');
@@ -718,7 +313,7 @@ impl<'a, 'b> SelectResult<'a, 'b> {
 
         for rec in &self.records {
             for (i, val) in rec.values.iter().enumerate().take(self.fields.len()) {
-                cols[i].push(Self::command_value_to_string(val));
+                cols[i].push(val.to_string());
             }
         }
 
@@ -727,7 +322,7 @@ impl<'a, 'b> SelectResult<'a, 'b> {
 
     fn calculate_widths(&self, cols: &[Vec<String>]) -> Vec<usize> {
         const MARGIN: usize = 2; // spaces padding (one left, one right)
-        let mut widths: Vec<usize> = self.fields.iter().map(|h| h.len()).collect();
+        let mut widths: Vec<usize> = self.fields.iter().map(|h| h.str_len()).collect();
 
         for (i, col) in cols.iter().enumerate() {
             for cell in col {
@@ -771,7 +366,7 @@ impl<'a, 'b> SelectResult<'a, 'b> {
     }
 }
 
-impl<'a, 'b> Display for SelectResult<'a, 'b> {
+impl<K: StrType, L: StrType> Display for SelectResult<K, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let cols = self.build_columns();
         let widths = self.calculate_widths(&cols);
@@ -779,7 +374,7 @@ impl<'a, 'b> Display for SelectResult<'a, 'b> {
         let top_sep = Self::build_separator(&widths, '┌', '┬', '┐', '─');
         writeln!(f, "{}", top_sep)?;
 
-        let header_cells: Vec<&str> = self.fields.to_vec();
+        let header_cells: Vec<&str> = self.fields.iter().map(|h| h.as_ref()).collect();
         let header = Self::build_row(&header_cells, &widths);
         writeln!(f, "{}", header)?;
 
@@ -805,8 +400,8 @@ impl<'a, 'b> Display for SelectResult<'a, 'b> {
 }
 
 #[derive(Debug)]
-pub enum CommandResult<'a, 'b> {
-    Select(SelectResult<'a, 'b>),
+pub enum CommandResult<K: StrType, L: StrType> {
+    Select(SelectResult<K, L>),
     Create,
     Delete,
     Insert,
@@ -814,7 +409,7 @@ pub enum CommandResult<'a, 'b> {
     ReadFrom,
 }
 
-impl<'a, 'b> Display for CommandResult<'a, 'b> {
+impl<K: StrType, L: StrType> Display for CommandResult<K, L> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             CommandResult::Select(select) => write!(f, "Done Select:\n{}", select),
@@ -827,8 +422,23 @@ impl<'a, 'b> Display for CommandResult<'a, 'b> {
     }
 }
 
-pub trait Command<'a, 'b> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError>;
+pub trait Command<K: StrType, L: StrType> {
+    fn execute(&mut self) -> Result<CommandResult<K, L>, DbError>;
+}
+
+impl Where<&str> {
+    /// Apply the where-clause to a `Record`.
+    ///
+    /// Looks up the field named by the clause in `value.values`. If present,
+    /// converts the stored value into a `CommandValue` and compares it using
+    /// `compare_value`. Missing fields result in `false`.
+    pub fn filter(&self, value: &Record) -> bool {
+        value
+            .values
+            .get(self.field)
+            .map(|v| self.compare_value(&v.into()))
+            .unwrap_or(false)
+    }
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
@@ -854,10 +464,10 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
         })
     }
 
-    fn execute_select(
+    fn execute_select<L: StrType>(
         &self,
         selected_fields: &[&'b str],
-    ) -> Result<Vec<CommandRecord<'a>>, DbError> {
+    ) -> Result<Vec<QueryRecord<&'a str>>, DbError> {
         Ok(self
             .table
             .records
@@ -877,16 +487,16 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
                         values.push(val.into());
                     }
                 }
-                CommandRecord { values }
+                QueryRecord { values }
             })
             .collect())
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
-        let selected_fields: Vec<&str> = self.execute_fields()?;
-        let result_records = self.execute_select(&selected_fields)?;
+impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for SelectCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
+        let selected_fields = self.execute_fields()?;
+        let result_records = self.execute_select::<&'a str>(&selected_fields)?;
 
         Ok(CommandResult::Select(SelectResult {
             fields: selected_fields,
@@ -895,8 +505,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SaveAsCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for SaveAsCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         let f = File::create(self.query.file);
         match f {
             Ok(mut file) => {
@@ -911,8 +521,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SaveAsCommand<'a, 'b, K> {
     }
 }
 
-impl<'a, 'b, K: DatabaseKey> Command<'a, 'b> for ReadFromCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a, 'b, K: DatabaseKey> Command<&'b str, &'a str> for ReadFromCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         let f = File::open(self.query.file);
         match f {
             Ok(mut file) => {
@@ -939,8 +549,8 @@ impl<'a, 'b, K: DatabaseKey> Command<'a, 'b> for ReadFromCommand<'a, 'b, K> {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for CreateCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         let existing = self.db.tables.get(self.query.table);
         if existing.is_some() {
             return Err(ExecutionError::TableAlreadyExists(self.query.table.into()).into());
@@ -949,6 +559,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
         let mut field_types: HashMap<String, FieldType> = self
             .query
             .fields_types
+            .0
             .iter()
             .map(|e| (e.field.to_owned(), e.field_type))
             .collect();
@@ -967,7 +578,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
 
 impl<'a: 'b, 'b, K: DatabaseKey> InsertCommand<'a, 'b, K> {
     fn check_non_existent(&self) -> Result<(), DbError> {
-        let non_existent: Vec<&InsertValue> = self
+        let non_existent: Vec<&InsertValue<&str>> = self
             .query
             .insert_values
             .iter()
@@ -1059,10 +670,10 @@ impl<'a: 'b, 'b, K: DatabaseKey> InsertCommand<'a, 'b, K> {
         Ok(())
     }
 
-    fn separate_key_and_other_fields(&self) -> (&InsertValue<'_>, HashMap<String, Value>) {
-        let mut fields: HashMap<String, Value> =
+    fn separate_key_and_other_fields(&self) -> (&InsertValue<&'b str>, HashMap<String, Value<String>>) {
+        let mut fields: HashMap<String, Value<String>> =
             HashMap::with_capacity(self.query.insert_values.len());
-        let mut key_field: &InsertValue = &self.query.insert_values[0];
+        let mut key_field: &InsertValue<&'b str> = &self.query.insert_values[0];
         for field in &self.query.insert_values {
             if field.field == self.table.key_field {
                 key_field = field;
@@ -1074,8 +685,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> InsertCommand<'a, 'b, K> {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for InsertCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         self.check_non_existent()?;
         let number_of_occurrences = self.count_field_occurrences();
         self.check_missing_fields(&number_of_occurrences)?;
@@ -1105,8 +716,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
 }
 
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for DeleteCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for DeleteCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         let delete_res = self.table.records.remove(&K::from_command_value(&self.query.key)?);
         if delete_res.is_none() {
             return Err(ExecutionError::RecordWithKeyNotFound(
@@ -1119,8 +730,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for DeleteCommand<'a, 'b, K> {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for AnyCommandInternal<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for AnyCommandInternal<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         match self {
             AnyCommandInternal::Select(select) => select.execute(),
             AnyCommandInternal::Insert(insert) => insert.execute(),
@@ -1132,8 +743,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for AnyCommandInternal<'a, 'b, 
     }
 }
 
-impl<'a: 'b, 'b> Command<'a, 'b> for AnyCommand<'a, 'b> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b> Command<&'b str, &'a str> for AnyCommand<'a, 'b> {
+    fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
         match self {
             AnyCommand::StringCommand(cmd) => cmd.execute(),
             AnyCommand::IntCommand(cmd) => cmd.execute(),
@@ -1142,13 +753,13 @@ impl<'a: 'b, 'b> Command<'a, 'b> for AnyCommand<'a, 'b> {
 }
 
 impl DatabaseKey for String {
-    fn get_command_value(value: &Self) -> CommandValue<'_> {
-        CommandValue::String(value)
+    fn get_command_value(value: &Self) -> Value<&'_ str> {
+        Value::String(value)
     }
 
-    fn from_command_value(value: &CommandValue) -> Result<Self, DbError> {
+    fn from_command_value(value: &Value<&str>) -> Result<Self, DbError> {
         match value {
-            CommandValue::String(s) => Ok((*s).to_owned()),
+            Value::String(s) => Ok((*s).to_owned()),
             _ => Err(ExecutionError::InvalidKeyType.into()),
         }
     }
@@ -1174,13 +785,13 @@ impl DatabaseKey for String {
 }
 
 impl DatabaseKey for i64 {
-    fn get_command_value(value: &Self) -> CommandValue<'_> {
-        CommandValue::Int(*value)
+    fn get_command_value(value: &Self) -> Value<&str> {
+        Value::Int(*value)
     }
 
-    fn from_command_value(value: &CommandValue) -> Result<Self, DbError> {
+    fn from_command_value(value: &Value<&str>) -> Result<Self, DbError> {
         match value {
-            CommandValue::Int(i) => Ok(*i),
+            Value::Int(i) => Ok(*i),
             _ => Err(ExecutionError::InvalidKeyType.into()),
         }
     }
@@ -1209,8 +820,8 @@ where
     Self: Display,
     Self: Clone,
 {
-    fn get_command_value(value: &Self) -> CommandValue<'_>;
-    fn from_command_value(value: &CommandValue) -> Result<Self, DbError>;
+    fn get_command_value(value: &Self) -> Value<&str>;
+    fn from_command_value(value: &Value<&str>) -> Result<Self, DbError>;
     fn field_type() -> FieldType;
     fn dbk_new() -> Self;
     fn is_equal_to(&self, other: &Self) -> bool;
@@ -1271,10 +882,10 @@ mod tests {
         let query = CreateQuery {
             table: "users",
             key_field: "id",
-            fields_types: vec![NewField {
+            fields_types: NewFields(vec![NewField {
                 field: "pet_name",
                 field_type: FieldType::String,
-            }],
+            }]),
         };
         let mut command = CreateCommand { db: &mut db, query };
 
@@ -1298,27 +909,27 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "id",
-                    value: CommandValue::String("9999"),
+                    value: Value::String("9999"),
                 },
                 InsertValue {
                     field: "name",
-                    value: CommandValue::String("John"),
+                    value: Value::String("John"),
                 },
                 InsertValue {
                     field: "surname",
-                    value: CommandValue::String("Doe"),
+                    value: Value::String("Doe"),
                 },
                 InsertValue {
                     field: "age",
-                    value: CommandValue::Int(42),
+                    value: Value::Int(42),
                 },
                 InsertValue {
                     field: "married",
-                    value: CommandValue::Bool(true),
+                    value: Value::Bool(true),
                 },
                 InsertValue {
                     field: "credit_score",
-                    value: CommandValue::Float(9.49),
+                    value: Value::Float(9.49),
                 },
             ],
         };
@@ -1359,27 +970,27 @@ mod tests {
             insert_values: vec![
                 InsertValue {
                     field: "id",
-                    value: CommandValue::String("1"),
+                    value: Value::String("1"),
                 },
                 InsertValue {
                     field: "name",
-                    value: CommandValue::String("Jane"),
+                    value: Value::String("Jane"),
                 },
                 InsertValue {
                     field: "surname",
-                    value: CommandValue::String("Dane"),
+                    value: Value::String("Dane"),
                 },
                 InsertValue {
                     field: "age",
-                    value: CommandValue::Int(40),
+                    value: Value::Int(40),
                 },
                 InsertValue {
                     field: "married",
-                    value: CommandValue::Bool(false),
+                    value: Value::Bool(false),
                 },
                 InsertValue {
                     field: "credit_score",
-                    value: CommandValue::Float(543.21),
+                    value: Value::Float(543.21),
                 },
             ],
         };
@@ -1455,7 +1066,7 @@ mod tests {
 
         let delete_query = DeleteQuery {
             table: "users",
-            key: CommandValue::String("1"),
+            key: Value::String("1"),
         };
         let mut delete_command = DeleteCommand {
             table: db.tables.get_mut("users").unwrap(),
@@ -1475,7 +1086,7 @@ mod tests {
 
         let delete_query = DeleteQuery {
             table: "users",
-            key: CommandValue::String("999"),
+            key: Value::String("999"),
         };
         let mut delete_command = DeleteCommand {
             table: db.tables.get_mut("users").unwrap(),
@@ -1502,8 +1113,8 @@ mod select_where_clause_tests {
 
     fn execute_select_with_where<'a: 'b, 'b>(
         db: &'a Database<String>,
-        where_clause: Where<'b>,
-    ) -> SelectResult<'a, 'b> {
+        where_clause: Where<&'b str>,
+    ) -> SelectResult<&'b str, &'a str> {
         let select_query = SelectQuery {
             table: "users",
             fields: SelectFields::Fields(vec!["name", "surname", "age"]),
@@ -1529,7 +1140,7 @@ mod select_where_clause_tests {
         let where_clause = Where {
             field: "age",
             op: Op::Greater,
-            value: CommandValue::Int(30),
+            value: Value::Int(30),
         };
 
         let select_result = execute_select_with_where(&db, where_clause);
@@ -1539,7 +1150,7 @@ mod select_where_clause_tests {
             select_result
                 .records
                 .iter()
-                .all(|r| r.values[2] > CommandValue::Int(30))
+                .all(|r| r.values[2] > Value::Int(30))
         );
     }
 
@@ -1549,13 +1160,13 @@ mod select_where_clause_tests {
         let where_clause = Where {
             field: "surname",
             op: Op::Eq,
-            value: CommandValue::String("Nowak"),
+            value: Value::String("Nowak"),
         };
 
         let select_result = execute_select_with_where(&db, where_clause);
 
         assert_eq!(select_result.records.len(), 1);
         let record = &select_result.records[0];
-        assert_eq!(record.values[1], CommandValue::String("Nowak"));
+        assert_eq!(record.values[1], Value::String("Nowak"));
     }
 }
