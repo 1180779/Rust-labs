@@ -537,12 +537,26 @@ pub fn parse_command<'a, 'b>(
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Clone)]
+#[derive(Debug, PartialOrd, Clone)]
 pub enum CommandValue<'a> {
     Bool(bool),
     String(&'a str),
     Int(i64),
     Float(f64),
+}
+
+const FLOAT_EPSILON: f64 = 1e-10;
+
+impl<'a> PartialEq for CommandValue<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (CommandValue::Float(a), CommandValue::Float(b)) => (a - b).abs() < FLOAT_EPSILON,
+            (CommandValue::Bool(a), CommandValue::Bool(b)) => a == b,
+            (CommandValue::String(a), CommandValue::String(b)) => a == b,
+            (CommandValue::Int(a), CommandValue::Int(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 impl CommandValue<'_> {
