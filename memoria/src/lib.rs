@@ -125,23 +125,16 @@ impl Display for CreateQueryOwned {
 
 impl Display for InsertQueryOwned {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let mut setters: String;
+        write!(f, "INSERT ")?;
         if self.insert_values.len() == 1 {
-            setters = self.insert_values[0].to_string();
+            write!(f, "{}", self.insert_values[0])?;
         } else {
-            setters = self.insert_values[0..self.insert_values.len()]
-                .iter()
-                .fold(String::new(), |a, v| {
-                    format!("{}{}, ", a, v).as_str().to_string()
-                })
-                .to_string();
-            setters.push_str(
-                self.insert_values[self.insert_values.len() - 1]
-                    .to_string()
-                    .as_str(),
-            );
+            for v in &self.insert_values[0..self.insert_values.len()] {
+                write!(f, "{}, ", v)?
+            }
+            write!(f, "{}", self.insert_values[self.insert_values.len() - 1])?;
         }
-        write!(f, "INSERT {} INTO {}", setters, self.table)
+        write!(f, "INTO {}", self.table)
     }
 }
 
@@ -172,13 +165,10 @@ impl Display for NewFields {
             0 => write!(f, ""),
             1 => write!(f, "{}", self.0[0]),
             _ => {
-                let mut fields = self.0[0..self.0.len() - 1]
-                    .iter()
-                    .fold(String::new(), |acc, f| {
-                        format!("{}{}, ", acc, f).to_string()
-                    });
-                fields.push_str(self.0[self.0.len() - 1].to_string().as_str());
-                write!(f, "{}", fields)
+                for v in &self.0[0..self.0.len() - 1] {
+                    write!(f, "{}, ", v)?;
+                }
+                write!(f, "{}", self.0[self.0.len() - 1])
             }
         }
     }
@@ -258,11 +248,10 @@ impl Display for SelectFieldsOwned {
                 0 => write!(f, ""),
                 1 => write!(f, "{}", fields[0]),
                 _ => {
-                    let mut str = fields[0..fields.len() - 1]
-                        .iter()
-                        .fold(String::new(), |acc, f| format!("{}{}, ", acc, f));
-                    str.push_str(fields[fields.len() - 1].as_str());
-                    write!(f, "{}", str)
+                    for v in &fields[0..fields.len() - 1] {
+                        write!(f, "{}, ", v)?;
+                    }
+                    write!(f, "{}", fields[fields.len() - 1])
                 }
             },
             SelectFieldsOwned::AllFields() => {
@@ -629,10 +618,16 @@ impl<K: DatabaseKey> CommandHistory<K> {
 
 impl<K: DatabaseKey> Display for CommandHistory<K> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let res = self.0.iter().fold(String::new(), |acc, q| {
-            format!("{}{}\n", acc, q).to_string()
-        });
-        write!(f, "{}", res)
+        match self.0.len() {
+            0 => write!(f, ""),
+            1 => write!(f, "{}", self.0[0]),
+            _ => {
+                for v in &self.0[0..self.0.len()] {
+                    writeln!(f, "{}", v)?;
+                }
+                write!(f, "{}", self.0[self.0.len() - 1])
+            }
+        }
     }
 }
 
