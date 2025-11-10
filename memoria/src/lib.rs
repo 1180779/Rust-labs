@@ -989,8 +989,8 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+impl<'a: 'b, 'b, K: DatabaseKey> InsertCommand<'a, 'b, K> {
+    fn check_non_existent(&self) -> Result<(), DbError> {
         let non_existent: Vec<&InsertValue> = self
             .query
             .insert_values
@@ -1004,19 +1004,27 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             )
             .into());
         }
+        Ok(())
+    }
 
+    fn count_field_occurrences(&self) -> HashMap<&str, u64> {
         let mut number_of_occurrences: HashMap<&str, u64> =
             self.table.types.iter().map(|t| (t.0.as_str(), 0)).collect();
         number_of_occurrences.insert(&self.table.key_field, 0);
 
         self.query.insert_values.iter().for_each(|p| {
             let f = number_of_occurrences.get_mut(p.field);
-            if f.is_none() {
-                return;
+            if let Some(c) = f {
+                *c += 1;
             }
-            let f = f.unwrap();
-            *f += 1;
         });
+        number_of_occurrences
+    }
+
+    fn check_missing_fields(
+        &self,
+        number_of_occurrences: &HashMap<&str, u64>,
+    ) -> Result<(), DbError> {
         let missing_fields: Vec<&str> = number_of_occurrences
             .iter()
             .filter(|p| *p.1 == 0)
@@ -1032,7 +1040,13 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             )
             .into());
         }
+        Ok(())
+    }
 
+    fn check_duplicated_fields(
+        &self,
+        number_of_occurrences: &HashMap<&str, u64>,
+    ) -> Result<(), DbError> {
         let duplicated_fields: Vec<String> = number_of_occurrences
             .iter()
             .filter(|p| *p.1 > 1)
@@ -1045,12 +1059,20 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             )
             .into());
         }
+        Ok(())
+    }
 
+    fn check_non_matching_types(&self) -> Result<(), DbError> {
         let non_matching_types: Vec<String> = self
             .query
             .insert_values
             .iter()
-            .filter(|p| p.value.field_type() != *self.table.types.get(p.field).unwrap())
+            .filter(|p| {
+                self.table
+                    .types
+                    .get(p.field)
+                    .is_none_or(|t| &p.value.field_type() != t)
+            })
             .map(|p| p.field.to_string())
             .collect();
         if !non_matching_types.is_empty() {
@@ -1058,22 +1080,41 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
                 ExecutionError::InvalidTypes(non_matching_types, self.query.table.into()).into(),
             );
         }
+        Ok(())
+    }
 
-        let insert_without_key: HashMap<String, Value> = self
-            .query
-            .insert_values
-            .iter()
-            .filter(|p| p.field != self.table.key_field)
-            .map(|p| (p.field.to_owned(), (&p.value).into()))
-            .collect();
-        let key = self
-            .query
-            .insert_values
-            .iter()
-            .find(|p| p.field == self.table.key_field)
-            .map(|p| p.value.clone())
-            .unwrap();
-        let key_value = K::from_command_value(key).unwrap();
+    fn separate_key_and_other_fields(&self) -> (&InsertValue<'_>, HashMap<String, Value>) {
+        let mut fields: HashMap<String, Value> =
+            HashMap::with_capacity(self.query.insert_values.len());
+        let mut key_field: &InsertValue = &self.query.insert_values[0];
+        for field in &self.query.insert_values {
+            if field.field == self.table.key_field {
+                key_field = field;
+            } else {
+                fields.insert(field.field.into(), (&field.value).into());
+            }
+        }
+        (key_field, fields)
+    }
+}
+
+impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+        self.check_non_existent()?;
+        let number_of_occurrences = self.count_field_occurrences();
+        self.check_missing_fields(&number_of_occurrences)?;
+        self.check_duplicated_fields(&number_of_occurrences)?;
+        self.check_non_matching_types()?;
+
+        let (key_field, other_fields) = self.separate_key_and_other_fields();
+        let key_value = K::from_command_value(&key_field.value);
+        let Some(key_value) = key_value else {
+            return Err(ExecutionError::InvalidTypes(
+                vec![key_field.field.to_string()],
+                self.query.table.into(),
+            )
+            .into());
+        };
 
         if self.table.records.contains_key(&key_value) {
             return Err(ExecutionError::RecordWithKeyAlreadyExists(
@@ -1086,7 +1127,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
         self.table.records.insert(
             key_value,
             Record {
-                values: insert_without_key,
+                values: other_fields,
             },
         );
 
@@ -1135,9 +1176,9 @@ impl DatabaseKey for String {
         CommandValue::String(value)
     }
 
-    fn from_command_value(value: CommandValue) -> Option<Self> {
+    fn from_command_value(value: &CommandValue) -> Option<Self> {
         match value {
-            CommandValue::String(s) => Some(s.to_owned()),
+            CommandValue::String(s) => Some((*s).to_owned()),
             _ => None,
         }
     }
@@ -1154,7 +1195,7 @@ impl DatabaseKey for String {
         self == other
     }
 
-    fn gramma_from_str(str: &str) -> Option<Self> {
+    fn from_pair(str: &str) -> Option<Self> {
         if str.len() >= 2 {
             return Some(str[1..str.len() - 1].to_string());
         }
@@ -1167,9 +1208,9 @@ impl DatabaseKey for i64 {
         CommandValue::Int(*value)
     }
 
-    fn from_command_value(value: CommandValue) -> Option<Self> {
+    fn from_command_value(value: &CommandValue) -> Option<Self> {
         match value {
-            CommandValue::Int(i) => Some(i),
+            CommandValue::Int(i) => Some(*i),
             _ => None,
         }
     }
@@ -1186,7 +1227,7 @@ impl DatabaseKey for i64 {
         self == other
     }
 
-    fn gramma_from_str(str: &str) -> Option<Self> {
+    fn from_pair(str: &str) -> Option<Self> {
         str.parse::<i64>().ok()
     }
 }
@@ -1199,11 +1240,11 @@ where
     Self: Clone,
 {
     fn get_command_value(value: &Self) -> CommandValue<'_>;
-    fn from_command_value(value: CommandValue) -> Option<Self>;
+    fn from_command_value(value: &CommandValue) -> Option<Self>;
     fn field_type() -> FieldType;
     fn dbk_new() -> Self;
     fn is_equal_to(&self, other: &Self) -> bool;
-    fn gramma_from_str(str: &str) -> Option<Self>;
+    fn from_pair(str: &str) -> Option<Self>;
 }
 
 /////////////////////////////////////////////

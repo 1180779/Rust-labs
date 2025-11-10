@@ -1,7 +1,15 @@
-[target.'cfg(all())']
+[target.'cfg(not(test))']
 rustflags = [
     "-Wclippy::unwrap_used",
     "-Wclippy::expect_used",
-    "-Wclippy::too_many_lines",
     "-Wclippy::panic",
+    "-Wclippy::too_many_lines",
+]
+
+[target.'cfg(test)']
+rustflags = [
+    "-Aclippy::unwrap_used",
+    "-Aclippy::expect_used",
+    "-Aclippy::panic",
+    "-Wclippy::too_many_lines",
 ]

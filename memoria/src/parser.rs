@@ -17,6 +17,11 @@ pub enum ParseError {
     #[error("Rule {:?} found where it is illegal by grammar", .0)]
     IllegalByGrammar(Rule),
 
+    /// Input encountered a type deemed illegal by the grammar.
+    /// Carries the unexpected type.
+    #[error("Type {:?} is illegal by grammar", .0)]
+    IllegalByGrammarType(String),
+
     /// Invalid conversion to an integer value.
     #[error("Illegal by grammar parsing error: {0}")]
     IllegalByGrammarParseIntError(#[from] std::num::ParseIntError),
@@ -205,14 +210,14 @@ impl Display for FieldType {
 }
 
 impl FieldType {
-    fn from_str(string: &str) -> Option<FieldType> {
-        let lowercase = string.to_lowercase();
+    fn from_pair(pair: &Pair<Rule>) -> Result<FieldType, ParseError> {
+        let lowercase = pair.as_str().to_lowercase();
         match lowercase.as_str() {
-            "bool" => Some(FieldType::Bool),
-            "string" => Some(FieldType::String),
-            "int" => Some(FieldType::Int),
-            "float" => Some(FieldType::Float),
-            _ => None,
+            "bool" => Ok(FieldType::Bool),
+            "string" => Ok(FieldType::String),
+            "int" => Ok(FieldType::Int),
+            "float" => Ok(FieldType::Float),
+            t => Err(ParseError::IllegalByGrammarType(t.into())),
         }
     }
 }
@@ -366,7 +371,7 @@ fn parse_query_s<K: DatabaseKey>(
     }))
 }
 
-fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
+fn parse_query_field_types(pair: Pair<Rule>) -> Result<Vec<NewField>, ParseError> {
     let mut fields_types = Vec::<NewField>::new();
     for inner in pair.into_inner() {
         if inner.as_rule() == Rule::field_type {
@@ -378,8 +383,8 @@ fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
                     Rule::field => {
                         field_name = inner_inner.as_str();
                     }
-                    Rule::ftype => field_type = FieldType::from_str(inner_inner.as_str()).unwrap(),
-                    _ => {}
+                    Rule::ftype => field_type = FieldType::from_pair(&inner_inner)?,
+                    rule => return Err(ParseError::IllegalByGrammar(rule))
                 }
             }
             fields_types.push(NewField {
@@ -388,7 +393,7 @@ fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
             })
         }
     }
-    fields_types
+    Ok(fields_types)
 }
 
 fn parse_query_c<K: DatabaseKey>(
@@ -406,7 +411,7 @@ fn parse_query_c<K: DatabaseKey>(
                 key_field = inner.as_str();
             }
             Rule::fields_types => {
-                fields_types = parse_query_field_types(inner);
+                fields_types = parse_query_field_types(inner)?;
             }
             rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
@@ -513,7 +518,7 @@ fn parse_query_d<K: DatabaseKey>(
                 table = inner.as_str();
             }
             Rule::key_value => {
-                key = K::gramma_from_str(inner.as_str()).unwrap();
+                key = K::from_pair(inner.as_str()).unwrap();
             }
             rule => return Err(ParseError::IllegalByGrammar(rule)),
         };
