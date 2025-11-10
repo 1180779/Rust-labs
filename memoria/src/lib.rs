@@ -3,11 +3,52 @@ use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::Hash;
 use std::io::{Read, Write};
+use thiserror::Error;
 
-pub mod parsing;
+#[derive(Error, Debug, PartialEq)]
+pub enum ExecutionError {
+    #[error("Invalid field: {0} for table: {1}")]
+    InvalidField(String, String),
+
+    #[error("Invalid fields: {0:?} for table: {1}")]
+    InvalidFields(Vec<String>, String),
+
+    #[error("Fields: {0:?} are missing in the insert for table: {1}")]
+    MissingFields(Vec<String>, String),
+
+    #[error("Fields: {0:?} are specified more than once for table: {1}")]
+    MoreThanOnceSpecifiedValues(Vec<String>, String),
+
+    #[error("Values for fields: {0:?} do not match field types for table: {1}")]
+    InvalidTypes(Vec<String>, String),
+
+    #[error("Record with key: {0} already exists in table: {1}")]
+    RecordWithKeyAlreadyExists(String, String),
+
+    #[error("Record with key: {0} not found in table: {1}")]
+    RecordWithKeyNotFound(String, String),
+
+    #[error("Table: {0} already exists")]
+    TableAlreadyExists(String),
+
+    #[error("Table: {0} does not exists")]
+    TableNotFound(String),
+
+    #[error("{0}")]
+    IoError(std::io::ErrorKind),
+}
+
+impl From<std::io::Error> for ExecutionError {
+    fn from(e: std::io::Error) -> Self {
+        ExecutionError::IoError(e.kind())
+    }
+}
+
+pub mod error;
+pub mod parser;
 use crate::AnyDatabase::{IntDatabase, StringDatabase};
-pub use parsing::*;
-
+use crate::error::DbError;
+pub use parser::*;
 /////////////////////////////////////////////
 // owned query types
 /////////////////////////////////////////////
@@ -434,67 +475,62 @@ impl<'a, 'b> AnyCommand<'a, 'b> {
 fn parse_command_create<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
     query: CreateQuery<'b>,
-) -> Result<AnyCommandInternal<'a, 'b, K>, String> {
+) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     Ok(AnyCommandInternal::Create(CreateCommand { db, query }))
 }
 
 fn parse_command_select<'a, 'b, K: DatabaseKey>(
     db: &'a Database<K>,
     query: SelectQuery<'b>,
-) -> Result<AnyCommandInternal<'a, 'b, K>, String> {
+) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get(query.table);
     match table {
         Some(table) => Ok(AnyCommandInternal::Select(SelectCommand { table, query })),
-        None => Err("Table not found".to_string()),
+        None => Err(ExecutionError::TableNotFound(query.table.into())),
     }
 }
 
 fn parse_command_insert<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
     query: InsertQuery<'b>,
-) -> Result<AnyCommandInternal<'a, 'b, K>, String> {
+) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get_mut(query.table);
     match table {
         Some(table) => Ok(AnyCommandInternal::Insert(InsertCommand { table, query })),
-        None => Err("Table not found".to_string()),
+        None => Err(ExecutionError::TableNotFound(query.table.into())),
     }
 }
 
 fn parse_command_delete<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
     query: DeleteQuery<'b, K>,
-) -> Result<AnyCommandInternal<'a, 'b, K>, String> {
+) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get_mut(query.table);
     match table {
         Some(table) => Ok(AnyCommandInternal::Delete(DeleteCommand { table, query })),
-        None => Err("Table not found".to_string()),
+        None => Err(ExecutionError::TableNotFound(query.table.into())),
     }
 }
 
 fn parse_command_<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
     command: &'b str,
-) -> Result<AnyCommandInternal<'a, 'b, K>, String> {
-    let query = parse_query::<K>(command);
+) -> Result<AnyCommandInternal<'a, 'b, K>, DbError> {
+    let query = parse_query::<K>(command)?;
     match query {
-        Ok(query) => match query {
-            Query::Create(query) => parse_command_create(db, query),
-            Query::Select(query) => parse_command_select(db, query),
-            Query::Insert(query) => parse_command_insert(db, query),
-            Query::Delete(query) => parse_command_delete(db, query),
-            Query::SaveAs(query) => Ok(AnyCommandInternal::SaveAs(SaveAsCommand { db, query })),
-            Query::ReadFrom(query) => {
-                Ok(AnyCommandInternal::ReadFrom(ReadFromCommand { db, query }))
-            }
-        },
-        Err(e) => Err(e.to_string()),
+        Query::Create(query) => Ok(parse_command_create(db, query)?),
+        Query::Select(query) => Ok(parse_command_select(db, query)?),
+        Query::Insert(query) => Ok(parse_command_insert(db, query)?),
+        Query::Delete(query) => Ok(parse_command_delete(db, query)?),
+        Query::SaveAs(query) => Ok(AnyCommandInternal::SaveAs(SaveAsCommand { db, query })),
+        Query::ReadFrom(query) => Ok(AnyCommandInternal::ReadFrom(ReadFromCommand { db, query })),
     }
 }
 
 pub fn parse_command<'a, 'b>(
     db: &'a mut AnyDatabase,
     command: &'b str,
-) -> Result<AnyCommand<'a, 'b>, String> {
+) -> Result<AnyCommand<'a, 'b>, DbError> {
     match db {
         StringDatabase(db) => parse_command_(db, command).map(AnyCommand::StringCommand),
         IntDatabase(db) => parse_command_(db, command).map(AnyCommand::IntCommand),
@@ -716,7 +752,6 @@ impl<'a, 'b> SelectResult<'a, 'b> {
         widths
     }
 
-    /// Build a separator line with box-drawing characters
     fn build_separator(
         widths: &[usize],
         left: char,
@@ -736,7 +771,6 @@ impl<'a, 'b> SelectResult<'a, 'b> {
         sep
     }
 
-    /// Build a data row (header or data)
     fn build_row(cells: &[&str], widths: &[usize]) -> String {
         let mut row = String::new();
         row.push('│');
@@ -805,11 +839,11 @@ impl<'a, 'b> Display for CommandResult<'a, 'b> {
 }
 
 pub trait Command<'a, 'b> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String>;
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError>;
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
-    fn execute_fields(&self) -> Result<Vec<&'b str>, String> {
+    fn execute_fields(&self) -> Result<Vec<&'b str>, DbError> {
         Ok(match &self.query.fields {
             SelectFields::AllFields() => {
                 let mut fields: Vec<&str> = self.table.types.keys().map(|k| k.as_str()).collect();
@@ -819,10 +853,11 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
             SelectFields::Fields(v) => {
                 for field_name in v {
                     if !self.table.types.contains_key(*field_name) {
-                        return Err(format!(
-                            "Field {} not found in table {}",
-                            field_name, self.query.table
-                        ));
+                        return Err(ExecutionError::InvalidField(
+                            (*field_name).into(),
+                            self.query.table.into(),
+                        )
+                        .into());
                     }
                 }
                 v.to_vec()
@@ -833,7 +868,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
     fn execute_select(
         &self,
         selected_fields: &[&'b str],
-    ) -> Result<Vec<CommandRecord<'a>>, String> {
+    ) -> Result<Vec<CommandRecord<'a>>, DbError> {
         Ok(self
             .table
             .records
@@ -860,7 +895,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
         let selected_fields: Vec<&str> = self.execute_fields()?;
         let result_records = self.execute_select(&selected_fields)?;
 
@@ -872,59 +907,54 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SelectCommand<'a, 'b, K> {
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for SaveAsCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
-        let mut f = File::create(self.query.file);
-        match &mut f {
-            Ok(file) => {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+        let f = File::create(self.query.file);
+        match f {
+            Ok(mut file) => {
                 let write_res = file.write_all(self.db.command_history.to_string().as_bytes());
                 match write_res {
                     Ok(_) => Ok(CommandResult::Create),
-                    Err(e) => Err(format!("{}", e).to_string()),
+                    Err(e) => Err(DbError::ExecutionError(e.into())),
                 }
             }
-            Err(e) => Err(format!("{}", e).to_string()),
+            Err(e) => Err(DbError::ExecutionError(e.into())),
         }
     }
 }
 
 impl<'a, 'b, K: DatabaseKey> Command<'a, 'b> for ReadFromCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
-        let mut f = File::open(self.query.file);
-        match &mut f {
-            Ok(file) => {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
+        let f = File::open(self.query.file);
+        match f {
+            Ok(mut file) => {
                 let mut file_content = String::new();
                 let read_res = file.read_to_string(&mut file_content);
                 if let Err(e) = read_res {
-                    return Err(format!("{}", e).to_string());
+                    return Err(DbError::ExecutionError(e.into()));
                 }
                 for line in file_content.lines() {
                     let line = line.trim();
                     if line.is_empty() {
                         continue;
                     }
-                    let command = parse_command_(self.db, line);
-                    match command {
-                        Ok(mut command) => {
-                            let result = command.execute()?;
-                            println!("{}", result);
-                            let query = (&command.query()).into();
-                            self.db.history_push(query);
-                        }
-                        Err(e) => return Err(e.to_string()),
-                    }
+                    let mut command = parse_command_(self.db, line)?;
+                    let result = command.execute()?;
+                    println!("{}", result);
+                    let query = (&command.query()).into();
+                    self.db.history_push(query);
                 }
                 Ok(CommandResult::ReadFrom)
             }
-            Err(e) => Err(e.to_string()),
+            Err(e) => Err(DbError::ExecutionError(e.into())),
         }
     }
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
         let existing = self.db.tables.get(self.query.table);
         if existing.is_some() {
-            return Err(format!("Table {} already exists", self.query.table));
+            return Err(ExecutionError::TableAlreadyExists(self.query.table.into()).into());
         }
 
         let mut field_types: HashMap<String, FieldType> = self
@@ -947,8 +977,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for CreateCommand<'a, 'b, K> {
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
-        /* check if nonexistent fields are present */
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
         let non_existent: Vec<&InsertValue> = self
             .query
             .insert_values
@@ -956,14 +985,13 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             .filter(|p| !self.table.types.contains_key(p.field))
             .collect();
         if !non_existent.is_empty() {
-            return Err(format!(
-                "fields: {:?} do not exists in table: {}",
-                non_existent.iter().map(|f| f.field).collect::<Vec<&str>>(),
-                self.query.table
-            ));
+            return Err(ExecutionError::InvalidFields(
+                non_existent.iter().map(|f| f.field.to_string()).collect(),
+                self.query.table.into(),
+            )
+            .into());
         }
 
-        /* check that all fields are present exactly once (map number of occasions for each field) */
         let mut number_of_occurrences: HashMap<&str, u64> =
             self.table.types.iter().map(|t| (t.0.as_str(), 0)).collect();
         number_of_occurrences.insert(&self.table.key_field, 0);
@@ -982,41 +1010,40 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             .map(|p| *p.0)
             .collect();
         if !missing_fields.is_empty() {
-            return Err(format!(
-                "Fields: [{}] in table: {} are missing",
+            return Err(ExecutionError::MissingFields(
                 missing_fields
                     .iter()
-                    .map(|s| format!("'{}'", s))
-                    .collect::<Vec<String>>()
-                    .join(", "),
-                self.query.table
-            ));
+                    .map(|s| s.to_string())
+                    .collect::<Vec<String>>(),
+                self.query.table.into(),
+            )
+            .into());
         }
 
-        let duplicated_fields: Vec<&str> = number_of_occurrences
+        let duplicated_fields: Vec<String> = number_of_occurrences
             .iter()
             .filter(|p| *p.1 > 1)
-            .map(|p| *p.0)
+            .map(|p| p.0.to_string())
             .collect();
         if !duplicated_fields.is_empty() {
-            return Err(format!(
-                "Fields: {:?} in table: {} are present more than once",
-                duplicated_fields, self.query.table
-            ));
+            return Err(ExecutionError::MoreThanOnceSpecifiedValues(
+                duplicated_fields,
+                self.query.table.into(),
+            )
+            .into());
         }
 
-        /* check if types match */
-        let non_matching_types: Vec<&InsertValue> = self
+        let non_matching_types: Vec<String> = self
             .query
             .insert_values
             .iter()
             .filter(|p| p.value.field_type() != *self.table.types.get(p.field).unwrap())
+            .map(|p| p.field.to_string())
             .collect();
         if !non_matching_types.is_empty() {
-            return Err(format!(
-                "fields: {:?} do not match their expected type",
-                non_matching_types
-            ));
+            return Err(
+                ExecutionError::InvalidTypes(non_matching_types, self.query.table.into()).into(),
+            );
         }
 
         let insert_without_key: HashMap<String, Value> = self
@@ -1034,12 +1061,13 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
             .map(|p| p.value.clone())
             .unwrap();
         let key_value = K::from_command_value(key).unwrap();
-        /* check if the record already exists */
+
         if self.table.records.contains_key(&key_value) {
-            return Err(format!(
-                "record with key: {} already exists in table: {}",
-                key_value, self.query.table
-            ));
+            return Err(ExecutionError::RecordWithKeyAlreadyExists(
+                key_value.to_string(),
+                self.query.table.to_string(),
+            )
+            .into());
         }
 
         self.table.records.insert(
@@ -1054,20 +1082,21 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for DeleteCommand<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
         let delete_res = self.table.records.remove(&self.query.key);
         if delete_res.is_none() {
-            return Err(format!(
-                "record with key: {} in table: {} not found",
-                self.query.key, self.query.table
-            ));
+            return Err(ExecutionError::RecordWithKeyNotFound(
+                self.query.key.to_string(),
+                self.query.table.into(),
+            )
+            .into());
         }
         Ok(CommandResult::Delete)
     }
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for AnyCommandInternal<'a, 'b, K> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
         match self {
             AnyCommandInternal::Select(select) => select.execute(),
             AnyCommandInternal::Insert(insert) => insert.execute(),
@@ -1080,7 +1109,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for AnyCommandInternal<'a, 'b, 
 }
 
 impl<'a: 'b, 'b> Command<'a, 'b> for AnyCommand<'a, 'b> {
-    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, String> {
+    fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
         match self {
             AnyCommand::StringCommand(cmd) => cmd.execute(),
             AnyCommand::IntCommand(cmd) => cmd.execute(),
@@ -1228,7 +1257,10 @@ mod tests {
         let result = command.execute();
 
         assert!(result.is_err());
-        assert_eq!(result.err().unwrap(), "Table users already exists");
+        assert_eq!(
+            result.err().unwrap(),
+            DbError::ExecutionError(ExecutionError::TableAlreadyExists("users".into()))
+        );
         assert_db_sample_structure_unchanged(&db);
     }
 
@@ -1336,7 +1368,10 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
-            "record with key: 1 already exists in table: users"
+            DbError::ExecutionError(ExecutionError::RecordWithKeyAlreadyExists(
+                "1".into(),
+                "users".into()
+            ))
         );
     }
 
@@ -1426,7 +1461,10 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(
             result.err().unwrap(),
-            "record with key: 999 in table: users not found"
+            DbError::ExecutionError(ExecutionError::RecordWithKeyNotFound(
+                "999".into(),
+                "users".into()
+            ))
         );
         let table = db.tables.get("users").unwrap();
         assert_eq!(table.records.len(), 3);

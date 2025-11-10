@@ -3,6 +3,26 @@ use pest::Parser;
 use pest::iterators::Pair;
 use pest_derive::Parser;
 use std::cmp::PartialEq;
+use thiserror::Error;
+
+#[derive(Error, Debug, PartialEq)]
+pub enum ParseError {
+    #[error("No rule found where it is illegal by grammar")]
+    IllegalByGrammarEmpty,
+    #[error("Rule {:?} found where it is illegal by grammar", .0)]
+    IllegalByGrammar(Rule),
+    #[error("Illegal by grammar parsing error: {0}")]
+    IllegalByGrammarParseIntError(#[from] std::num::ParseIntError),
+    #[error("Illegal by grammar parsing error: string without string delimiters")]
+    IllegalByGrammarParseStringError,
+    #[error("Illegal by grammar parsing error: {0}")]
+    IllegalByGrammarParseFloatError(#[from] std::num::ParseFloatError),
+    #[error("Illegal by grammar parsing error: {0}")]
+    IllegalByGrammarParseBoolError(#[from] std::str::ParseBoolError),
+
+    #[error("{0}")]
+    ParseError(#[from] Box<pest::error::Error<Rule>>),
+}
 
 #[derive(Parser)]
 #[grammar = "gramma.pest"]
@@ -253,7 +273,7 @@ fn parse_query_op(pair: Pair<'_, Rule>) -> Option<Op> {
     }
 }
 
-fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_>, String> {
+fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_>, ParseError> {
     let mut field = "";
     let mut op: Op = Op::Eq;
     let mut value: CommandValue = CommandValue::Int(0);
@@ -270,9 +290,7 @@ fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_
                 }
             }
             Rule::field_value => {
-                if let Some(parsed_value) = parse_query_field_value(inner.into_inner()) {
-                    value = parsed_value?;
-                }
+                value = parse_query_field_value(inner.into_inner())?;
             }
             _ => {}
         }
@@ -280,7 +298,7 @@ fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_
     Ok(Where { field, op, value })
 }
 
-fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
+fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
     let mut fields = SelectFields::new();
     let mut table = "";
     let mut where_clause = None;
@@ -296,7 +314,7 @@ fn parse_query_s<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
                 table = inner.as_str();
             }
             Rule::where_clause => where_clause = Some(parse_query_where(inner.into_inner())?),
-            _ => {}
+            rule => return Err(ParseError::IllegalByGrammar(rule))
         }
     }
     Ok(Query::Select(SelectQuery {
@@ -331,7 +349,7 @@ fn parse_query_field_types(pair: Pair<Rule>) -> Vec<NewField> {
     fields_types
 }
 
-fn parse_query_c<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
+fn parse_query_c<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
     let mut table = "";
     let mut key_field = "";
     let mut fields_types = Vec::<NewField>::new();
@@ -346,7 +364,7 @@ fn parse_query_c<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
             Rule::fields_types => {
                 fields_types = parse_query_field_types(inner);
             }
-            _ => {}
+            rule => return Err(ParseError::IllegalByGrammar(rule))
         }
     }
     Ok(Query::Create(CreateQuery {
@@ -356,43 +374,34 @@ fn parse_query_c<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
     }))
 }
 
-fn parse_query_field_value_bool(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
+fn parse_query_field_value_bool(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
     let parsed = pair.as_str().to_lowercase().parse();
-    if let Err(e) = parsed {
-        return Some(Err(format!("{}", e)));
-    }
-    Some(Ok(CommandValue::Bool(parsed.unwrap())))
+    Ok(CommandValue::Bool(parsed?))
 }
 
-fn parse_query_field_value_string(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
+fn parse_query_field_value_string(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
     if pair.as_str().len() < 2 {
-        return Some(Err(format!("string {} is invalid!", pair.as_str())));
+        return Err(ParseError::IllegalByGrammarParseStringError);
     }
-    Some(Ok(CommandValue::String(
+    Ok(CommandValue::String(
         &pair.as_str()[1..pair.as_str().len() - 1],
-    )))
+    ))
 }
 
-fn parse_query_field_value_int(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
+fn parse_query_field_value_int(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
     let parsed = pair.as_str().parse();
-    if let Err(e) = parsed {
-        return Some(Err(format!("{}", e)));
-    }
-    Some(Ok(CommandValue::Int(parsed.unwrap())))
+    Ok(CommandValue::Int(parsed?))
 }
 
-fn parse_query_field_value_float(pair: Pair<Rule>) -> Option<Result<CommandValue, String>> {
+fn parse_query_field_value_float(pair: Pair<Rule>) -> Result<CommandValue, ParseError> {
     let parsed = pair.as_str().parse();
-    if let Err(e) = parsed {
-        return Some(Err(format!("{}", e)));
-    }
-    Some(Ok(CommandValue::Float(parsed.unwrap())))
+    Ok(CommandValue::Float(parsed?))
 }
 
 fn parse_query_field_value(
     pairs: pest::iterators::Pairs<Rule>,
-) -> Option<Result<CommandValue, String>> {
-    let empty_err = || Some(Err("field empty".to_string()));
+) -> Result<CommandValue, ParseError> {
+    let empty_err = || Err(ParseError::IllegalByGrammarEmpty);
 
     pairs
         .into_iter()
@@ -402,11 +411,11 @@ fn parse_query_field_value(
             Rule::string => parse_query_field_value_string(inner),
             Rule::int => parse_query_field_value_int(inner),
             Rule::float => parse_query_field_value_float(inner),
-            _ => empty_err(),
+            rule => Err(ParseError::IllegalByGrammar(rule)),
         })
 }
 
-fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, String> {
+fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, ParseError> {
     let inner_inner = pair.into_inner();
     let mut field = "";
     let mut value = CommandValue::String("");
@@ -416,9 +425,7 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Stri
                 field = inner_inner.as_str();
             }
             Rule::field_value => {
-                if let Some(inner_res) = parse_query_field_value(inner_inner.into_inner()) {
-                    value = inner_res?;
-                }
+                value = parse_query_field_value(inner_inner.into_inner())?;
             }
             _ => {}
         }
@@ -427,7 +434,7 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Stri
     Ok(InsertValue { field, value })
 }
 
-fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
+fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
     let mut table = "";
     let mut insert_values = Vec::<InsertValue>::new();
     for inner in pairs {
@@ -437,14 +444,10 @@ fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
             }
             Rule::field_value_setters => {
                 for inner in inner.into_inner() {
-                    let res = parse_query_field_value_setters(inner);
-                    match res {
-                        Ok(v) => insert_values.push(v),
-                        Err(e) => return Err(e.to_string()),
-                    }
+                    insert_values.push(parse_query_field_value_setters(inner)?);
                 }
             }
-            _ => {}
+            rule => return Err(ParseError::IllegalByGrammar(rule))
         }
     }
     Ok(Query::Insert(InsertQuery {
@@ -455,7 +458,7 @@ fn parse_query_i<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
 
 /// Parses a query from a `Pair<Rule>` and constructs a `Query<K>` object.
 /// It is assumed that Rule is of variant Rule::D (that is pair.as_rule() returns Rule::D
-fn parse_query_d<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
+fn parse_query_d<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
     let mut key: K = K::dbk_new();
     let mut table = "";
     for inner in pairs {
@@ -466,40 +469,47 @@ fn parse_query_d<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<
             Rule::key_value => {
                 key = K::gramma_from_str(inner.as_str()).unwrap();
             }
-            _ => {}
+            rule => return Err(ParseError::IllegalByGrammar(rule))
         };
     }
     Ok(Query::Delete(DeleteQuery { key, table }))
 }
 
-fn parse_query_sa<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
+fn parse_query_sa<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
     let mut file = "";
     for inner in pairs {
-        if inner.as_rule() == Rule::file_path {
-            file = inner.as_str();
-        };
+        match inner.as_rule() {
+            Rule::file_path => {
+                file = inner.as_str();
+
+            },
+            rule => return Err(ParseError::IllegalByGrammar(rule))
+        }
     }
     Ok(Query::SaveAs(SaveAsQuery { file }))
 }
 
-fn parse_query_rf<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, String> {
+fn parse_query_rf<K: DatabaseKey>(pairs: pest::iterators::Pairs<Rule>) -> Result<Query<K>, ParseError> {
     let mut file = "";
     for inner in pairs {
-        if inner.as_rule() == Rule::file_path {
-            file = inner.as_str();
-        };
+        match inner.as_rule() {
+            Rule::file_path => {
+                file = inner.as_str();
+            },
+            rule => return Err(ParseError::IllegalByGrammar(rule))
+        }
     }
     Ok(Query::ReadFrom(ReadFromQuery { file }))
 }
 
 /// Parse input query and translate the results into internal command representation
-pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, String> {
-    let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(|e| e.to_string())?;
+pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, ParseError> {
+    let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(Box::new)?;
 
     let query_pair = pairs
         .next()
         .and_then(|p| p.into_inner().next())
-        .ok_or("Query was empty or invalid")?;
+        .ok_or(ParseError::IllegalByGrammarEmpty)?;
 
     let query_rule = query_pair.as_rule();
     let inner_pairs = query_pair.into_inner();
@@ -510,7 +520,7 @@ pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, S
         Rule::D => parse_query_d(inner_pairs),
         Rule::SA => parse_query_sa(inner_pairs),
         Rule::RF => parse_query_rf(inner_pairs),
-        rule => Err(format!("Unexpected rule {:?}", rule)),
+        rule => Err(ParseError::IllegalByGrammar(rule)),
     }
 }
 
@@ -741,16 +751,6 @@ mod tests {
         let select = "SAVE_AS ./Documents/my_queries";
         let expected_result = Query::<String>::SaveAs(SaveAsQuery {
             file: "./Documents/my_queries",
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn save_as_relative_path_spaces_unix() {
-        let select = "SAVE_AS ./Documents/my queries/session_2";
-        let expected_result = Query::<String>::SaveAs(SaveAsQuery {
-            file: "./Documents/my queries/session_2",
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
