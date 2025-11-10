@@ -55,10 +55,7 @@ fn main() {
             Ok(res) => {
                 println!("{}", res);
                 let query = (&command.query()).into();
-                let res = db.history_push(query);
-                if let Err(e) = res {
-                    println!("Failed to push query: {:?}", e);
-                }
+                db.history_push(query);
             }
             Err(e) => {
                 println!("Failed to execute command: {:?}", e);

@@ -43,6 +43,9 @@ pub enum ExecutionError {
     #[error("Table: {0} does not exists")]
     TableNotFound(String),
 
+    #[error("Invalid key type")]
+    InvalidKeyType,
+
     #[error("{0}")]
     IoError(std::io::ErrorKind),
 }
@@ -58,40 +61,16 @@ pub mod parser;
 pub use parser::*;
 
 #[derive(Debug)]
-pub enum AnyQueryOwned {
-    StringQuery(QueryOwned<String>),
-    IntQuery(QueryOwned<i64>),
-}
-
-impl<'a: 'b, 'b> From<&'b AnyQuery<'a>> for AnyQueryOwned {
-    fn from(value: &'b AnyQuery<'a>) -> Self {
-        match value {
-            AnyQuery::StringQuery(q) => AnyQueryOwned::StringQuery(q.into()),
-            AnyQuery::IntQuery(q) => AnyQueryOwned::IntQuery(q.into()),
-        }
-    }
-}
-
-impl Display for AnyQueryOwned {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AnyQueryOwned::StringQuery(q) => write!(f, "{}", q),
-            AnyQueryOwned::IntQuery(q) => write!(f, "{}", q),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum QueryOwned<K: DatabaseKey> {
+pub enum QueryOwned {
     Create(CreateQueryOwned),
-    Delete(DeleteQueryOwned<K>),
+    Delete(DeleteQueryOwned),
     Insert(InsertQueryOwned),
     Select(SelectQueryOwned),
     SaveAs(SaveAsQueryOwned),
     ReadFrom(ReadFromQueryOwned),
 }
 
-impl<K: DatabaseKey> Display for QueryOwned<K> {
+impl Display for QueryOwned {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             QueryOwned::Select(query) => write!(f, "{}", query),
@@ -142,7 +121,7 @@ impl Display for InsertQueryOwned {
     }
 }
 
-impl<K: DatabaseKey> Display for DeleteQueryOwned<K> {
+impl Display for DeleteQueryOwned {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "DELETE {} FROM {}", self.key, self.table)
     }
@@ -186,8 +165,8 @@ pub struct CreateQueryOwned {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct DeleteQueryOwned<K: DatabaseKey> {
-    pub key: K,
+pub struct DeleteQueryOwned {
+    pub key: Value,
     pub table: String,
 }
 
@@ -327,11 +306,11 @@ impl<'a: 'b, 'b> From<&'b CreateQuery<'a>> for CreateQueryOwned {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> From<&'b DeleteQuery<'a, K>> for DeleteQueryOwned<K> {
-    fn from(value: &'b DeleteQuery<'a, K>) -> Self {
+impl<'a: 'b, 'b> From<&'b DeleteQuery<'a>> for DeleteQueryOwned {
+    fn from(value: &'b DeleteQuery<'a>) -> Self {
         DeleteQueryOwned {
             table: value.table.into(),
-            key: value.key.clone(),
+            key: (&value.key).into(),
         }
     }
 }
@@ -374,8 +353,8 @@ impl<'a: 'b, 'b> From<&'b ReadFromQuery<'a>> for ReadFromQueryOwned {
     }
 }
 
-impl<'a: 'b, 'b, K: DatabaseKey> From<&'b Query<'a, K>> for QueryOwned<K> {
-    fn from(value: &'b Query<'a, K>) -> Self {
+impl<'a: 'b, 'b> From<&'b Query<'a>> for QueryOwned {
+    fn from(value: &'b Query<'a>) -> Self {
         match value {
             Query::Select(q) => QueryOwned::Select(q.into()),
             Query::Delete(q) => QueryOwned::Delete(q.into()),
@@ -424,7 +403,7 @@ pub struct ReadFromCommand<'a, 'b, K: DatabaseKey> {
 #[derive(Debug)]
 pub struct DeleteCommand<'a, 'b, K: DatabaseKey> {
     pub table: &'a mut Table<K>,
-    pub query: DeleteQuery<'b, K>,
+    pub query: DeleteQuery<'b>,
 }
 
 #[derive(Debug)]
@@ -438,7 +417,7 @@ pub enum AnyCommandInternal<'a, 'b, K: DatabaseKey> {
 }
 
 impl<'a, 'b, K: DatabaseKey> AnyCommandInternal<'a, 'b, K> {
-    pub fn query(self) -> Query<'b, K> {
+    pub fn query(self) -> Query<'b> {
         match self {
             AnyCommandInternal::Select(c) => c.query.into(),
             AnyCommandInternal::Create(c) => c.query.into(),
@@ -457,10 +436,10 @@ pub enum AnyCommand<'a, 'b> {
 }
 
 impl<'a, 'b> AnyCommand<'a, 'b> {
-    pub fn query(self) -> AnyQuery<'b> {
+    pub fn query(self) -> Query<'b> {
         match self {
-            AnyCommand::StringCommand(c) => AnyQuery::StringQuery(c.query()),
-            AnyCommand::IntCommand(c) => AnyQuery::IntQuery(c.query()),
+            AnyCommand::StringCommand(c) => c.query(),
+            AnyCommand::IntCommand(c) => c.query(),
         }
     }
 }
@@ -496,7 +475,7 @@ fn parse_command_insert<'a, 'b, K: DatabaseKey>(
 
 fn parse_command_delete<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
-    query: DeleteQuery<'b, K>,
+    query: DeleteQuery<'b>,
 ) -> Result<AnyCommandInternal<'a, 'b, K>, ExecutionError> {
     let table = db.tables.get_mut(query.table);
     match table {
@@ -509,7 +488,7 @@ fn parse_command_<'a, 'b, K: DatabaseKey>(
     db: &'a mut Database<K>,
     command: &'b str,
 ) -> Result<AnyCommandInternal<'a, 'b, K>, DbError> {
-    let query = parse_query::<K>(command)?;
+    let query = parse_query(command)?;
     match query {
         Query::Create(query) => Ok(parse_command_create(db, query)?),
         Query::Select(query) => Ok(parse_command_select(db, query)?),
@@ -536,6 +515,17 @@ pub enum CommandValue<'a> {
     String(&'a str),
     Int(i64),
     Float(f64),
+}
+
+impl<'a> Display for CommandValue<'a> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CommandValue::Bool(v) => write!(f, "{}", v),
+            CommandValue::String(v) => write!(f, "\"{}\"", v),
+            CommandValue::Int(v) => write!(f, "{}", v),
+            CommandValue::Float(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 const FLOAT_EPSILON: f64 = 1e-10;
@@ -612,15 +602,15 @@ impl<'a> From<&'a Record> for CommandRecord<'a> {
 }
 
 #[derive(Debug)]
-struct CommandHistory<K: DatabaseKey>(Vec<QueryOwned<K>>);
+struct CommandHistory(Vec<QueryOwned>);
 
-impl<K: DatabaseKey> CommandHistory<K> {
+impl CommandHistory {
     fn new() -> Self {
         CommandHistory(vec![])
     }
 }
 
-impl<K: DatabaseKey> Display for CommandHistory<K> {
+impl Display for CommandHistory {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self.0.len() {
             0 => write!(f, ""),
@@ -638,7 +628,7 @@ impl<K: DatabaseKey> Display for CommandHistory<K> {
 #[derive(Debug)]
 pub struct Database<K: DatabaseKey> {
     tables: HashMap<String, Table<K>>,
-    command_history: CommandHistory<K>,
+    command_history: CommandHistory,
 }
 
 impl<K: DatabaseKey> Default for Database<K> {
@@ -655,7 +645,7 @@ impl<K: DatabaseKey> Database<K> {
         }
     }
 
-    pub fn history_push(&mut self, query: QueryOwned<K>) {
+    pub fn history_push(&mut self, query: QueryOwned) {
         self.command_history.0.push(query);
     }
 }
@@ -665,12 +655,6 @@ pub struct Table<K: DatabaseKey> {
     key_field: String,
     types: HashMap<String, FieldType>,
     records: std::collections::BTreeMap<K, Record>,
-}
-
-#[derive(Debug)]
-pub enum AnyQuery<'a> {
-    StringQuery(Query<'a, String>),
-    IntQuery(Query<'a, i64>),
 }
 
 #[derive(Debug)]
@@ -688,21 +672,13 @@ impl AnyDatabase {
         IntDatabase(Database::new())
     }
 
-    pub fn history_push(&mut self, query: AnyQueryOwned) -> Result<(), String> {
+    pub fn history_push(&mut self, query: QueryOwned) {
         match self {
-            StringDatabase(database) => match query {
-                AnyQueryOwned::StringQuery(query) => {
-                    database.command_history.0.push(query);
-                    Ok(())
-                }
-                AnyQueryOwned::IntQuery(_) => Err("invalid query type".to_string()),
+            StringDatabase(database) => {
+                database.command_history.0.push(query);
             },
-            IntDatabase(database) => match query {
-                AnyQueryOwned::IntQuery(query) => {
-                    database.command_history.0.push(query);
-                    Ok(())
-                }
-                AnyQueryOwned::StringQuery(_) => Err("invalid query type".to_string()),
+            IntDatabase(database) => {
+                database.command_history.0.push(query);
             },
         }
     }
@@ -1107,14 +1083,7 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
         self.check_non_matching_types()?;
 
         let (key_field, other_fields) = self.separate_key_and_other_fields();
-        let key_value = K::from_command_value(&key_field.value);
-        let Some(key_value) = key_value else {
-            return Err(ExecutionError::InvalidTypes(
-                vec![key_field.field.to_string()],
-                self.query.table.into(),
-            )
-            .into());
-        };
+        let key_value = K::from_command_value(&key_field.value)?;
 
         if self.table.records.contains_key(&key_value) {
             return Err(ExecutionError::RecordWithKeyAlreadyExists(
@@ -1135,9 +1104,10 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for InsertCommand<'a, 'b, K> {
     }
 }
 
+
 impl<'a: 'b, 'b, K: DatabaseKey> Command<'a, 'b> for DeleteCommand<'a, 'b, K> {
     fn execute(&mut self) -> Result<CommandResult<'a, 'b>, DbError> {
-        let delete_res = self.table.records.remove(&self.query.key);
+        let delete_res = self.table.records.remove(&K::from_command_value(&self.query.key)?);
         if delete_res.is_none() {
             return Err(ExecutionError::RecordWithKeyNotFound(
                 self.query.key.to_string(),
@@ -1176,10 +1146,10 @@ impl DatabaseKey for String {
         CommandValue::String(value)
     }
 
-    fn from_command_value(value: &CommandValue) -> Option<Self> {
+    fn from_command_value(value: &CommandValue) -> Result<Self, DbError> {
         match value {
-            CommandValue::String(s) => Some((*s).to_owned()),
-            _ => None,
+            CommandValue::String(s) => Ok((*s).to_owned()),
+            _ => Err(ExecutionError::InvalidKeyType.into()),
         }
     }
 
@@ -1208,10 +1178,10 @@ impl DatabaseKey for i64 {
         CommandValue::Int(*value)
     }
 
-    fn from_command_value(value: &CommandValue) -> Option<Self> {
+    fn from_command_value(value: &CommandValue) -> Result<Self, DbError> {
         match value {
-            CommandValue::Int(i) => Some(*i),
-            _ => None,
+            CommandValue::Int(i) => Ok(*i),
+            _ => Err(ExecutionError::InvalidKeyType.into()),
         }
     }
 
@@ -1240,7 +1210,7 @@ where
     Self: Clone,
 {
     fn get_command_value(value: &Self) -> CommandValue<'_>;
-    fn from_command_value(value: &CommandValue) -> Option<Self>;
+    fn from_command_value(value: &CommandValue) -> Result<Self, DbError>;
     fn field_type() -> FieldType;
     fn dbk_new() -> Self;
     fn is_equal_to(&self, other: &Self) -> bool;
@@ -1485,7 +1455,7 @@ mod tests {
 
         let delete_query = DeleteQuery {
             table: "users",
-            key: "1".to_string(),
+            key: CommandValue::String("1"),
         };
         let mut delete_command = DeleteCommand {
             table: db.tables.get_mut("users").unwrap(),
@@ -1505,7 +1475,7 @@ mod tests {
 
         let delete_query = DeleteQuery {
             table: "users",
-            key: "999".to_string(),
+            key: CommandValue::String("999"),
         };
         let mut delete_command = DeleteCommand {
             table: db.tables.get_mut("users").unwrap(),

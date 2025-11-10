@@ -137,46 +137,46 @@ impl Where<'_> {
 
 /// Parsed query AST encompassing all supported commands.
 #[derive(Debug, PartialEq)]
-pub enum Query<'a, K: DatabaseKey> {
+pub enum Query<'a> {
     Create(CreateQuery<'a>),
-    Delete(DeleteQuery<'a, K>),
+    Delete(DeleteQuery<'a>),
     Insert(InsertQuery<'a>),
     Select(SelectQuery<'a>),
     SaveAs(SaveAsQuery<'a>),
     ReadFrom(ReadFromQuery<'a>),
 }
 
-impl<'a, K: DatabaseKey> From<CreateQuery<'a>> for Query<'a, K> {
+impl<'a> From<CreateQuery<'a>> for Query<'a> {
     fn from(value: CreateQuery<'a>) -> Self {
         Query::Create(value)
     }
 }
 
-impl<'a, K: DatabaseKey> From<DeleteQuery<'a, K>> for Query<'a, K> {
-    fn from(value: DeleteQuery<'a, K>) -> Self {
+impl<'a> From<DeleteQuery<'a>> for Query<'a> {
+    fn from(value: DeleteQuery<'a>) -> Self {
         Query::Delete(value)
     }
 }
 
-impl<'a, K: DatabaseKey> From<InsertQuery<'a>> for Query<'a, K> {
+impl<'a> From<InsertQuery<'a>> for Query<'a> {
     fn from(value: InsertQuery<'a>) -> Self {
         Query::Insert(value)
     }
 }
 
-impl<'a, K: DatabaseKey> From<SelectQuery<'a>> for Query<'a, K> {
+impl<'a> From<SelectQuery<'a>> for Query<'a> {
     fn from(value: SelectQuery<'a>) -> Self {
         Query::Select(value)
     }
 }
 
-impl<'a, K: DatabaseKey> From<SaveAsQuery<'a>> for Query<'a, K> {
+impl<'a> From<SaveAsQuery<'a>> for Query<'a> {
     fn from(value: SaveAsQuery<'a>) -> Self {
         Query::SaveAs(value)
     }
 }
 
-impl<'a, K: DatabaseKey> From<ReadFromQuery<'a>> for Query<'a, K> {
+impl<'a> From<ReadFromQuery<'a>> for Query<'a> {
     fn from(value: ReadFromQuery<'a>) -> Self {
         Query::ReadFrom(value)
     }
@@ -231,8 +231,8 @@ pub struct InsertQuery<'a> {
 
 /// `DELETE` query.
 #[derive(Debug, PartialEq)]
-pub struct DeleteQuery<'a, K: DatabaseKey> {
-    pub key: K,
+pub struct DeleteQuery<'a> {
+    pub key: CommandValue<'a>,
     pub table: &'a str,
 }
 
@@ -343,9 +343,9 @@ fn parse_query_where(pairs: pest::iterators::Pairs<'_, Rule>) -> Result<Where<'_
     Ok(Where { field, op, value })
 }
 
-fn parse_query_s<K: DatabaseKey>(
+fn parse_query_s(
     pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query<K>, ParseError> {
+) -> Result<Query, ParseError> {
     let mut fields = SelectFields::new();
     let mut table = "";
     let mut where_clause = None;
@@ -396,9 +396,9 @@ fn parse_query_field_types(pair: Pair<Rule>) -> Result<Vec<NewField>, ParseError
     Ok(fields_types)
 }
 
-fn parse_query_c<K: DatabaseKey>(
+fn parse_query_c(
     pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query<K>, ParseError> {
+) -> Result<Query, ParseError> {
     let mut table = "";
     let mut key_field = "";
     let mut fields_types = Vec::<NewField>::new();
@@ -483,9 +483,9 @@ fn parse_query_field_value_setters(pair: Pair<Rule>) -> Result<InsertValue, Pars
     Ok(InsertValue { field, value })
 }
 
-fn parse_query_i<K: DatabaseKey>(
+fn parse_query_i(
     pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query<K>, ParseError> {
+) -> Result<Query, ParseError> {
     let mut table = "";
     let mut insert_values = Vec::<InsertValue>::new();
     for inner in pairs {
@@ -507,10 +507,10 @@ fn parse_query_i<K: DatabaseKey>(
     }))
 }
 
-fn parse_query_d<K: DatabaseKey>(
+fn parse_query_d(
     pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query<K>, ParseError> {
-    let mut key: K = K::dbk_new();
+) -> Result<Query, ParseError> {
+    let mut key = CommandValue::Int(0);
     let mut table = "";
     for inner in pairs {
         match inner.as_rule() {
@@ -518,7 +518,7 @@ fn parse_query_d<K: DatabaseKey>(
                 table = inner.as_str();
             }
             Rule::key_value => {
-                key = K::from_pair(inner.as_str()).unwrap();
+                key = parse_query_field_value(inner.into_inner())?;
             }
             rule => return Err(ParseError::IllegalByGrammar(rule)),
         };
@@ -526,9 +526,7 @@ fn parse_query_d<K: DatabaseKey>(
     Ok(Query::Delete(DeleteQuery { key, table }))
 }
 
-fn parse_query_sa_rf<K: DatabaseKey>(
-    pairs: pest::iterators::Pairs<Rule>,
-) -> Result<Query<K>, ParseError> {
+fn parse_query_sa_rf(pairs: pest::iterators::Pairs<Rule>) -> Result<&str, ParseError> {
     let mut file = "";
     for inner in pairs {
         match inner.as_rule() {
@@ -538,11 +536,25 @@ fn parse_query_sa_rf<K: DatabaseKey>(
             rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
+    Ok(file)
+}
+
+fn parse_query_sa(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query, ParseError> {
+    let file = parse_query_sa_rf(pairs)?;
+    Ok(Query::SaveAs(SaveAsQuery { file }))
+}
+
+fn parse_query_rf(
+    pairs: pest::iterators::Pairs<Rule>,
+) -> Result<Query, ParseError> {
+    let file = parse_query_sa_rf(pairs)?;
     Ok(Query::ReadFrom(ReadFromQuery { file }))
 }
 
 /// Parse input query and translate the results into internal command representation
-pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, ParseError> {
+pub(crate) fn parse_query(query: &str) -> Result<Query<'_>, ParseError> {
     let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(Box::new)?;
 
     let query_pair = pairs
@@ -557,8 +569,8 @@ pub(crate) fn parse_query<K: DatabaseKey>(query: &str) -> Result<Query<'_, K>, P
         Rule::C => parse_query_c(inner_pairs),
         Rule::I => parse_query_i(inner_pairs),
         Rule::D => parse_query_d(inner_pairs),
-        Rule::SA => parse_query_sa_rf(inner_pairs),
-        Rule::RF => parse_query_sa_rf(inner_pairs),
+        Rule::SA => parse_query_sa(inner_pairs),
+        Rule::RF => parse_query_rf(inner_pairs),
         rule => Err(ParseError::IllegalByGrammar(rule)),
     }
 }
@@ -569,7 +581,7 @@ mod tests {
     #[test]
     fn select_all() {
         let select = "SELECT * FROM table";
-        let expected_result = Query::<String>::Select(SelectQuery {
+        let expected_result = Query::Select(SelectQuery {
             table: "table",
             fields: SelectFields::AllFields(),
             where_clause: None,
@@ -581,7 +593,7 @@ mod tests {
     #[test]
     fn select_all_where() {
         let select = "SELECT * FROM table WHERE avg_rating > 4.5";
-        let expected_result = Query::<String>::Select(SelectQuery {
+        let expected_result = Query::Select(SelectQuery {
             table: "table",
             fields: SelectFields::AllFields(),
             where_clause: Some(Where {
@@ -597,7 +609,7 @@ mod tests {
     #[test]
     fn select_one_field() {
         let select = "SELECT field1 FROM table";
-        let expected_result = Query::<String>::Select(SelectQuery {
+        let expected_result = Query::Select(SelectQuery {
             table: "table",
             fields: SelectFields::Fields(vec!["field1"]),
             where_clause: None,
@@ -609,7 +621,7 @@ mod tests {
     #[test]
     fn select_one_field_where() {
         let select = "SELECT field1 FROM table WHERE id <= 10";
-        let expected_result = Query::<String>::Select(SelectQuery {
+        let expected_result = Query::Select(SelectQuery {
             table: "table",
             fields: SelectFields::Fields(vec!["field1"]),
             where_clause: Some(Where {
@@ -625,7 +637,7 @@ mod tests {
     #[test]
     fn select_multiple_fields() {
         let select = "SELECT field1, field2, field3 FROM my_table";
-        let expected_result = Query::<String>::Select(SelectQuery {
+        let expected_result = Query::Select(SelectQuery {
             table: "my_table",
             fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
             where_clause: None,
@@ -637,7 +649,7 @@ mod tests {
     #[test]
     fn create_single_field() {
         let create_query = "CREATE users KEY id FIELDS name: STRING";
-        let expected_result = Query::<String>::Create(CreateQuery {
+        let expected_result = Query::Create(CreateQuery {
             table: "users",
             key_field: "id",
             fields_types: vec![NewField {
@@ -652,7 +664,7 @@ mod tests {
     #[test]
     fn create_multiple_fields() {
         let create_query = "CREATE products KEY sku FIELDS name: STRING, price: FLOAT, stock: INT";
-        let expected_result = Query::<String>::Create(CreateQuery {
+        let expected_result = Query::Create(CreateQuery {
             table: "products",
             key_field: "sku",
             fields_types: vec![
@@ -678,7 +690,7 @@ mod tests {
     fn insert_all_types() {
         let insert_query =
             "INSERT name = 'test_user', age = 30, active = TRUE, score = 99.5 INTO users";
-        let expected_result = Query::<String>::Insert(InsertQuery {
+        let expected_result = Query::Insert(InsertQuery {
             table: "users",
             insert_values: vec![
                 InsertValue {
@@ -706,7 +718,7 @@ mod tests {
     #[test]
     fn insert_negative_numbers() {
         let insert_query = "INSERT temperature = -10.5, balance = -50 INTO readings";
-        let expected_result = Query::<String>::Insert(InsertQuery {
+        let expected_result = Query::Insert(InsertQuery {
             table: "readings",
             insert_values: vec![
                 InsertValue {
@@ -726,29 +738,29 @@ mod tests {
     #[test]
     fn delete_string_key() {
         let delete_query = "DELETE 'user-123-abc' FROM users";
-        let expected_result = Query::<String>::Delete(DeleteQuery {
-            key: "user-123-abc".to_string(),
+        let expected_result = Query::Delete(DeleteQuery {
+            key: CommandValue::String("user-123-abc"),
             table: "users",
         });
-        let result = parse_query::<String>(delete_query).unwrap();
+        let result = parse_query(delete_query).unwrap();
         assert_eq!(result, expected_result);
     }
 
     #[test]
     fn delete_int_key() {
         let delete_query = "DELETE 42 FROM products";
-        let expected_result = Query::<i64>::Delete(DeleteQuery {
-            key: 42,
+        let expected_result = Query::Delete(DeleteQuery {
+            key: CommandValue::Int(42),
             table: "products",
         });
-        let result = parse_query::<i64>(delete_query).unwrap();
+        let result = parse_query(delete_query).unwrap();
         assert_eq!(result, expected_result);
     }
 
     #[test]
     fn parse_fail_incomplete_query() {
         let bad_query = "CREATE users KEY";
-        let result = parse_query::<String>(bad_query);
+        let result = parse_query(bad_query);
         assert!(
             result.is_err(),
             "Expected parsing to fail for incomplete query"
@@ -758,7 +770,7 @@ mod tests {
     #[test]
     fn parse_fail_wrong_keyword() {
         let bad_query = "SELECT * TO users";
-        let result = parse_query::<String>(bad_query);
+        let result = parse_query(bad_query);
         assert!(
             result.is_err(),
             "Expected parsing to fail for incorrect keyword"
@@ -768,7 +780,7 @@ mod tests {
     #[test]
     fn parse_fail_malformed_insert() {
         let bad_query = "INSERT name = 'test', age: 30 INTO users";
-        let result = parse_query::<String>(bad_query);
+        let result = parse_query(bad_query);
         assert!(
             result.is_err(),
             "Expected parsing to fail for malformed INSERT"
@@ -778,7 +790,7 @@ mod tests {
     #[test]
     fn save_as_abs_path_unix() {
         let select = "SAVE_AS /home/guest/Documents/my_queries";
-        let expected_result = Query::<String>::SaveAs(SaveAsQuery {
+        let expected_result = Query::SaveAs(SaveAsQuery {
             file: "/home/guest/Documents/my_queries",
         });
         let result = parse_query(select).unwrap();
@@ -788,7 +800,7 @@ mod tests {
     #[test]
     fn save_as_relative_path_unix() {
         let select = "SAVE_AS ./Documents/my_queries";
-        let expected_result = Query::<String>::SaveAs(SaveAsQuery {
+        let expected_result = Query::SaveAs(SaveAsQuery {
             file: "./Documents/my_queries",
         });
         let result = parse_query(select).unwrap();
@@ -798,7 +810,7 @@ mod tests {
     #[test]
     fn save_as_absolute_path_windows() {
         let select = "SAVE_AS C:\\Documents\\my_queries.txt";
-        let expected_result = Query::<String>::SaveAs(SaveAsQuery {
+        let expected_result = Query::SaveAs(SaveAsQuery {
             file: "C:\\Documents\\my_queries.txt",
         });
         let result = parse_query(select).unwrap();
@@ -808,7 +820,7 @@ mod tests {
     #[test]
     fn save_as_relative_path_windows() {
         let select = "SAVE_AS .\\Documents\\my_queries\\session_2.txt";
-        let expected_result = Query::<String>::SaveAs(SaveAsQuery {
+        let expected_result = Query::SaveAs(SaveAsQuery {
             file: ".\\Documents\\my_queries\\session_2.txt",
         });
         let result = parse_query(select).unwrap();
@@ -818,7 +830,7 @@ mod tests {
     #[test]
     fn read_from() {
         let select = "READ_FROM ./Documents/my_queries/session_2";
-        let expected_result = Query::<String>::ReadFrom(ReadFromQuery {
+        let expected_result = Query::ReadFrom(ReadFromQuery {
             file: "./Documents/my_queries/session_2",
         });
         let result = parse_query(select).unwrap();
