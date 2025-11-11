@@ -1,5 +1,5 @@
 use clap::{Parser, ValueEnum};
-use memoria::{AnyCommand, AnyDatabase, Command, parse_command};
+use memoria::{AnyDatabase, Command, parse_command};
 use std::io;
 
 #[derive(Clone, Debug, ValueEnum)]
@@ -15,19 +15,20 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
-    let mut line = String::new();
-
-    let mut db: AnyDatabase = match args.key_type {
+    let mut db: AnyDatabase = match Args::parse().key_type {
         KeyType::String => AnyDatabase::new_string_database(),
         KeyType::Int => AnyDatabase::new_int_database(),
     };
 
     println!("enter QUIT to shut down");
+    run(&mut db);
+}
+
+fn run(db: &mut AnyDatabase) {
+    let mut line = String::new();
     loop {
         line.clear();
-        let line_res = io::stdin().read_line(&mut line);
-        if let Err(e) = line_res {
+        if let Err(e) = io::stdin().read_line(&mut line) {
             println!("Failed to read line: {:?}", e);
             continue;
         }
@@ -41,26 +42,25 @@ fn main() {
             continue;
         }
 
-        let parse_res = parse_command(&mut db, line);
-        let mut command: AnyCommand = match parse_res {
-            Ok(command) => command,
-            Err(e) => {
-                println!("Failed to parse command: {:?}", e);
-                continue;
-            }
-        };
+        parse_and_execute(db, line);
+    }
+}
 
-        let result = command.execute();
-        match result {
-            Ok(res) => {
-                println!("{}", res);
-                let query = (&command.query()).into();
-                db.history_push(query);
-            }
-            Err(e) => {
-                println!("Failed to execute command: {:?}", e);
-                continue;
-            }
+fn parse_and_execute(db: &mut AnyDatabase, line: &str) {
+    let mut command = match parse_command(db, line) {
+        Ok(cmd) => cmd,
+        Err(e) => {
+            println!("Failed to parse command: {:?}", e);
+            return;
         }
+    };
+
+    match command.execute() {
+        Ok(res) => {
+            println!("{}", res);
+            let query = (&command.query()).into();
+            db.history_push(query);
+        }
+        Err(e) => println!("Failed to execute command: {}", e),
     }
 }

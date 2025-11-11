@@ -833,6 +833,7 @@ where
 /////////////////////////////////////////////
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -1097,7 +1098,7 @@ mod tests {
         assert_eq!(
             result.err().unwrap(),
             DbError::ExecutionError(ExecutionError::RecordWithKeyNotFound(
-                "999".into(),
+                Value::String("999").to_string(),
                 "users".into()
             ))
         );
@@ -1107,6 +1108,7 @@ mod tests {
 }
 
 #[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod select_where_clause_tests {
     use super::*;
     use tests::db_sample;

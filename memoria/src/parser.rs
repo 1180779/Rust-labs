@@ -23,6 +23,9 @@ pub enum ParseError {
     #[error("Type {:?} is illegal by grammar", .0)]
     IllegalByGrammarType(String),
 
+    #[error("Operator {:?} is illegal by grammar", .0)]
+    IllegalByGrammarOp(String),
+
     /// Invalid conversion to an integer value.
     #[error("Illegal by grammar parsing error: {0}")]
     IllegalByGrammarParseIntError(#[from] std::num::ParseIntError),
@@ -80,7 +83,7 @@ impl FieldType {
             "string" => Ok(FieldType::String),
             "int" => Ok(FieldType::Int),
             "float" => Ok(FieldType::Float),
-            t => Err(ParseError::IllegalByGrammarType(t.into())),
+            t => Err(ParseError::IllegalByGrammarOp(t.into())),
         }
     }
 }
@@ -91,15 +94,15 @@ fn parse_query_fields<'a, K: ParsableStrType<'a, K>>(
     pairs.map(|pair| K::from_pair(&pair)).collect()
 }
 
-fn parse_query_op(pair: Pair<'_, Rule>) -> Option<Op> {
+fn parse_query_op(pair: Pair<'_, Rule>) -> Result<Op, ParseError> {
     match pair.as_str() {
-        "=" => Some(Op::Eq),
-        "!=" => Some(Op::Neq),
-        ">=" => Some(Op::GreaterEq),
-        "<=" => Some(Op::LessEq),
-        ">" => Some(Op::Greater),
-        "<" => Some(Op::Less),
-        _ => None,
+        "=" => Ok(Op::Eq),
+        "!=" => Ok(Op::Neq),
+        ">=" => Ok(Op::GreaterEq),
+        "<=" => Ok(Op::LessEq),
+        ">" => Ok(Op::Greater),
+        "<" => Ok(Op::Less),
+        s => Err(ParseError::IllegalByGrammarOp(s.into())),
     }
 }
 
@@ -116,10 +119,7 @@ fn parse_query_where<'a, K: ParsableStrType<'a, K>>(
                 field = K::from_pair(&inner);
             }
             Rule::op => {
-                let parsed_op = parse_query_op(inner);
-                if let Some(parsed_op) = parsed_op {
-                    op = parsed_op;
-                }
+                op = parse_query_op(inner)?;
             }
             Rule::field_value => {
                 value = parse_query_field_value(inner.into_inner())?;
@@ -356,7 +356,7 @@ fn parse_query_rf<'a, K: ParsableStrType<'a, K>>(
 }
 
 /// Parse input query and translate the results into internal command representation
-pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed, ParseError> {
+pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed<'_>, ParseError> {
     let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(Box::new)?;
 
     let query_pair = pairs
@@ -377,6 +377,8 @@ pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed, ParseError> {
     }
 }
 
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
