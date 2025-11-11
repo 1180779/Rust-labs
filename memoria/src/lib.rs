@@ -872,7 +872,6 @@ mod tests {
 
     #[test]
     fn test_create_table() {
-        // TODO: fix
         let db = db_sample();
         assert_db_sample_structure_unchanged(&db);
     }
@@ -955,11 +954,10 @@ mod tests {
         );
         assert_eq!(record.values.get("age"), Some(&Value::Int(42)));
         assert_eq!(record.values.get("married"), Some(&Value::Bool(true)));
-        // float comparisons will fail; TODO: implement equality with margin of error
-        // assert_eq!(
-        //     record.values.get("credit score"),
-        //     Some(&Value::Float(9.49))
-        // );
+        assert_eq!(
+            record.values.get("credit_score"),
+            Some(&Value::Float(9.49))
+        );
     }
 
     #[test]
