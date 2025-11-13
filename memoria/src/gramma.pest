@@ -39,8 +39,14 @@ INTO = _{ ^"INTO" }
 FROM = _{ ^"FROM" }
 WHERE = _{ ^"WHERE" }
 KEY = _{ ^"KEY" }
+ORDER_BY = _{ ^"ORDER_BY" }
+DESC = { ^"DESC" }
+LIMIT = _{ ^"LIMIT" }
 
-S = { SELECT ~ whitespace+ ~ (fields | fields_all) ~ whitespace+ ~ FROM ~ whitespace+ ~ table ~ (whitespace+ ~ where_clause)? }
+order_by = { ORDER_BY ~ whitespace+ ~ field ~ (whitespace+ ~ DESC)? }
+limit = { LIMIT ~ whitespace+ ~ value }
+
+S = { SELECT ~ whitespace+ ~ (fields | fields_all) ~ whitespace+ ~ FROM ~ whitespace+ ~ table ~ (whitespace+ ~ where_clause)? ~ (whitespace+ ~order_by)? ~ (whitespace+ ~ limit)? }
 C = { CREATE ~ whitespace+ ~ table ~ whitespace+ ~ KEY ~ whitespace+ ~ field ~ whitespace+ ~ FIELDS ~ whitespace+ ~ fields_types }
 I = { INSERT ~ whitespace+ ~ field_value_setters ~ whitespace+ ~ INTO ~ whitespace+ ~ table }
 D = { DELETE ~ whitespace+ ~ key_value ~ whitespace+ ~ FROM ~ whitespace+ ~ table }

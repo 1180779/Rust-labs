@@ -45,6 +45,9 @@ pub enum ParseError {
     /// Error originating from the `pest` library.
     #[error("{0}")]
     ParseError(#[from] Box<pest::error::Error<Rule>>),
+
+    #[error("{0}")]
+    TryFromIntError(#[from] std::num::TryFromIntError),
 }
 
 /// Pest parser from query grammar
@@ -106,56 +109,85 @@ fn parse_query_op(pair: Pair<'_, Rule>) -> Result<Op, ParseError> {
     }
 }
 
-fn parse_query_where<'a, K: ParsableStrType<'a, K>>(
+fn parse_order_by<'a, K: ParsableStrType<'a, K>>(
     pairs: pest::iterators::Pairs<'a, Rule>,
-) -> Result<Where<K>, ParseError> {
-    let mut field = K::default();
-    let mut op: Op = Op::Eq;
-    let mut value: Value<K> = Value::Int(0);
+) -> Result<OrderBy<K>, ParseError> {
+    let mut order_by = OrderBy::default();
 
     for inner in pairs {
         match inner.as_rule() {
             Rule::field => {
-                field = K::from_pair(&inner);
+                order_by.field = K::from_pair(&inner);
             }
-            Rule::op => {
-                op = parse_query_op(inner)?;
+            Rule::DESC => {
+                order_by.descending = true;
             }
-            Rule::field_value => {
-                value = parse_query_field_value(inner.into_inner())?;
-            }
-            _ => {}
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
-    Ok(Where { field, op, value })
+    Ok(order_by)
+}
+
+fn parse_limit(pairs: pest::iterators::Pairs<Rule>) -> Result<Limit, ParseError> {
+    let mut limit = Limit::default();
+
+    for inner in pairs {
+        match inner.as_rule() {
+            Rule::value => {
+                limit.count = parse_query_value(inner)?.try_into().map_or_else(Err, Ok)?;
+            }
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
+        }
+    }
+    Ok(limit)
+}
+
+fn parse_query_where<'a, K: ParsableStrType<'a, K>>(
+    pairs: pest::iterators::Pairs<'a, Rule>,
+) -> Result<Where<K>, ParseError> {
+    let mut where_caluse: Where<K> = Where::default();
+
+    for inner in pairs {
+        match inner.as_rule() {
+            Rule::field => {
+                where_caluse.field = K::from_pair(&inner);
+            }
+            Rule::op => {
+                where_caluse.op = parse_query_op(inner)?;
+            }
+            Rule::field_value => {
+                where_caluse.value = parse_query_field_value(inner.into_inner())?;
+            }
+            rule => return Err(ParseError::IllegalByGrammar(rule)),
+        }
+    }
+    Ok(where_caluse)
 }
 
 fn parse_query_s<'a, K: ParsableStrType<'a, K>>(
     pairs: pest::iterators::Pairs<'a, Rule>,
 ) -> Result<Query<K>, ParseError> {
-    let mut fields = SelectFields::new();
-    let mut table = K::default();
-    let mut where_clause = None;
+    let mut select = SelectQuery::default();
     for inner in pairs {
         match inner.as_rule() {
             Rule::fields => {
-                fields = SelectFields::from(parse_query_fields(inner.into_inner()));
+                select.fields = SelectFields::from(parse_query_fields(inner.into_inner()));
             }
             Rule::fields_all => {
-                fields = SelectFields::AllFields();
+                select.fields = SelectFields::AllFields();
             }
             Rule::table => {
-                table = K::from_pair(&inner);
+                select.table = K::from_pair(&inner);
             }
-            Rule::where_clause => where_clause = Some(parse_query_where(inner.into_inner())?),
+            Rule::where_clause => {
+                select.where_clause = Some(parse_query_where(inner.into_inner())?)
+            }
+            Rule::order_by => select.order_by = Some(parse_order_by(inner.into_inner())?),
+            Rule::limit => select.limit = Some(parse_limit(inner.into_inner())?),
             rule => return Err(ParseError::IllegalByGrammar(rule)),
         }
     }
-    Ok(Query::Select(SelectQuery {
-        fields,
-        table,
-        where_clause,
-    }))
+    Ok(Query::Select(select))
 }
 
 fn parse_query_field_types<'a, K: ParsableStrType<'a, K>>(
@@ -236,6 +268,11 @@ fn parse_query_field_value_int<'a, K: ParsableStrType<'a, K>>(
 ) -> Result<Value<K>, ParseError> {
     let parsed = pair.as_str().parse();
     Ok(Value::Int(parsed?))
+}
+
+fn parse_query_value(pair: Pair<Rule>) -> Result<i64, ParseError> {
+    let parsed = pair.as_str().parse();
+    Ok(parsed?)
 }
 
 fn parse_query_field_value_float<'a, K: ParsableStrType<'a, K>>(
@@ -389,6 +426,8 @@ mod tests {
             table: "table",
             fields: SelectFields::AllFields(),
             where_clause: None,
+            limit: None,
+            order_by: None,
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -405,6 +444,8 @@ mod tests {
                 op: Op::Greater,
                 value: Value::Float(4.5),
             }),
+            limit: None,
+            order_by: None,
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -417,6 +458,8 @@ mod tests {
             table: "table",
             fields: SelectFields::Fields(vec!["field1"]),
             where_clause: None,
+            limit: None,
+            order_by: None,
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -433,6 +476,8 @@ mod tests {
                 op: Op::LessEq,
                 value: Value::Int(10),
             }),
+            limit: None,
+            order_by: None,
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);
@@ -445,6 +490,8 @@ mod tests {
             table: "my_table",
             fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
             where_clause: None,
+            limit: None,
+            order_by: None,
         });
         let result = parse_query(select).unwrap();
         assert_eq!(result, expected_result);

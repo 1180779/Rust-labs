@@ -32,6 +32,12 @@ pub enum Value<K: StrType> {
     Float(f64),
 }
 
+impl<K: StrType> Default for Value<K> {
+    fn default() -> Self {
+        Value::Int(0)
+    }
+}
+
 impl<K: StrType> Display for Value<K> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -79,6 +85,12 @@ pub enum Op {
     LessEq,
 }
 
+impl Default for Op {
+    fn default() -> Self {
+        Op::Eq
+    }
+}
+
 impl Display for Op {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -92,7 +104,7 @@ impl Display for Op {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 /// Represents a WHERE clause comparison used to filter records.
 pub struct Where<K: StrType> {
     /// Field name in the record to evaluate.
@@ -313,11 +325,24 @@ pub struct CreateQuery<K: StrType> {
 }
 
 /// `SELECT` query.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub struct SelectQuery<K: StrType> {
     pub fields: SelectFields<K>,
     pub table: K,
     pub where_clause: Option<Where<K>>,
+    pub order_by: Option<OrderBy<K>>,
+    pub limit: Option<Limit>,
+}
+
+#[derive(Debug, PartialEq, Default)]
+pub struct OrderBy<K: StrType> {
+    pub field: K,
+    pub descending: bool,
+}
+
+#[derive(Debug, PartialEq, Clone, Copy, Default)]
+pub struct Limit {
+    pub count: usize,
 }
 
 /// `SAVE_AS` query.
@@ -421,6 +446,8 @@ impl From<&SelectQuery<&str>> for SelectQuery<String> {
             table: q.table.into(),
             fields: (&q.fields).into(),
             where_clause: q.where_clause.as_ref().map(|w| w.into()),
+            order_by: q.order_by.as_ref().map(|o| o.into()),
+            limit: q.limit,
         }
     }
 }
@@ -497,6 +524,15 @@ impl From<&NewFields<&str>> for NewFields<String> {
                 })
                 .collect(),
         )
+    }
+}
+
+impl From<&OrderBy<&str>> for OrderBy<String> {
+    fn from(value: &OrderBy<&str>) -> Self {
+        OrderBy {
+            field: value.field.to_string(),
+            descending: value.descending,
+        }
     }
 }
 

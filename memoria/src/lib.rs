@@ -58,12 +58,12 @@ impl From<std::io::Error> for ExecutionError {
 
 use crate::AnyDatabase::{IntDatabase, StringDatabase};
 
-mod query;
 pub mod parser;
+mod query;
 
+use crate::query::borrowed::*;
 pub use parser::*;
 use query::*;
-use crate::query::borrowed::*;
 
 #[derive(Debug)]
 pub struct SelectCommand<'a, 'b, K: DatabaseKey> {
@@ -204,8 +204,6 @@ pub fn parse_command<'a, 'b>(
     }
 }
 
-
-
 #[derive(Debug, Clone)]
 pub struct Record {
     values: HashMap<String, Value<String>>,
@@ -286,10 +284,10 @@ impl AnyDatabase {
         match self {
             StringDatabase(database) => {
                 database.command_history.0.push(query);
-            },
+            }
             IntDatabase(database) => {
                 database.command_history.0.push(query);
-            },
+            }
         }
     }
 }
@@ -464,20 +462,15 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
         })
     }
 
-    fn execute_select<L: StrType>(
+    fn execute_select(
         &self,
         selected_fields: &[&'b str],
     ) -> Result<Vec<QueryRecord<&'a str>>, DbError> {
-        Ok(self
-            .table
-            .records
+        let mut sorted_records = self.get_sorted_records();
+        self.apply_order_by(&mut sorted_records);
+
+        let mut records: Vec<_> = sorted_records
             .iter()
-            .filter(|(_, record)| {
-                self.query
-                    .where_clause
-                    .as_ref()
-                    .is_none_or(|wc| wc.filter(record))
-            })
             .map(|(key, record)| {
                 let mut values = Vec::with_capacity(selected_fields.len());
                 for &field_name in selected_fields {
@@ -489,14 +482,56 @@ impl<'a: 'b, 'b, K: DatabaseKey> SelectCommand<'a, 'b, K> {
                 }
                 QueryRecord { values }
             })
-            .collect())
+            .collect();
+
+        if let Some(limit) = self.query.limit {
+            records.truncate(limit.count);
+        }
+        Ok(records)
+    }
+
+    fn get_sorted_records(&self) -> Vec<(&'a K, &'a Record)> {
+        self
+            .table
+            .records
+            .iter()
+            .filter(|(_, record)| {
+                self.query
+                    .where_clause
+                    .as_ref()
+                    .is_none_or(|wc| wc.filter(record))
+            })
+            .collect()
+    }
+
+    fn apply_order_by(&self, sorted_records: &mut Vec<(&K, &Record)>) {
+        if let Some(order_by) = &self.query.order_by {
+            sorted_records.sort_by(|a, b| {
+                let a_value = a.1.values.get(order_by.field);
+                let b_value = b.1.values.get(order_by.field);
+                match (a_value, b_value) {
+                    (None, None) => std::cmp::Ordering::Equal,
+                    (None, Some(_)) => std::cmp::Ordering::Equal,
+                    (Some(_), None) => std::cmp::Ordering::Equal,
+                    (Some(a_value), Some(b_value)) => {
+                        let ordering = a_value
+                            .partial_cmp(b_value)
+                            .unwrap_or(std::cmp::Ordering::Equal);
+                        match order_by.descending {
+                            true => ordering.reverse(),
+                            false => ordering,
+                        }
+                    }
+                }
+            });
+        }
     }
 }
 
 impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for SelectCommand<'a, 'b, K> {
     fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
-        let selected_fields = self.execute_fields()?;
-        let result_records = self.execute_select::<&'a str>(&selected_fields)?;
+        let selected_fields: Vec<&'b _> = self.execute_fields()?;
+        let result_records: Vec<QueryRecord<&'a _>> = self.execute_select(&selected_fields)?;
 
         Ok(CommandResult::Select(SelectResult {
             fields: selected_fields,
@@ -670,7 +705,9 @@ impl<'a: 'b, 'b, K: DatabaseKey> InsertCommand<'a, 'b, K> {
         Ok(())
     }
 
-    fn separate_key_and_other_fields(&self) -> (&InsertValue<&'b str>, HashMap<String, Value<String>>) {
+    fn separate_key_and_other_fields(
+        &self,
+    ) -> (&InsertValue<&'b str>, HashMap<String, Value<String>>) {
         let mut fields: HashMap<String, Value<String>> =
             HashMap::with_capacity(self.query.insert_values.len());
         let mut key_field: &InsertValue<&'b str> = &self.query.insert_values[0];
@@ -715,10 +752,12 @@ impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for InsertCommand<'a,
     }
 }
 
-
 impl<'a: 'b, 'b, K: DatabaseKey> Command<&'b str, &'a str> for DeleteCommand<'a, 'b, K> {
     fn execute(&mut self) -> Result<CommandResult<&'b str, &'a str>, DbError> {
-        let delete_res = self.table.records.remove(&K::from_command_value(&self.query.key)?);
+        let delete_res = self
+            .table
+            .records
+            .remove(&K::from_command_value(&self.query.key)?);
         if delete_res.is_none() {
             return Err(ExecutionError::RecordWithKeyNotFound(
                 self.query.key.to_string(),
@@ -1017,6 +1056,8 @@ mod tests {
             table: "users",
             fields: SelectFields::AllFields(),
             where_clause: None,
+            limit: None,
+            order_by: None,
         };
         let mut select_command = SelectCommand {
             table: db.tables.get("users").unwrap(),
@@ -1040,6 +1081,8 @@ mod tests {
             table: "users",
             fields: SelectFields::Fields(vec!["name", "age"]),
             where_clause: None,
+            limit: None,
+            order_by: None,
         };
         let mut select_command = SelectCommand {
             table: db.tables.get("users").unwrap(),
@@ -1119,6 +1162,8 @@ mod select_where_clause_tests {
             table: "users",
             fields: SelectFields::Fields(vec!["name", "surname", "age"]),
             where_clause: Some(where_clause),
+            limit: None,
+            order_by: None,
         };
         let mut select_command = SelectCommand {
             table: db.tables.get("users").unwrap(),
