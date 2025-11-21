@@ -60,16 +60,13 @@ pub fn cycles_2_loop(edges: &[(u32, u32)]) -> Vec<u32> {
     for i in edges {
         for j in edges {
             if i.0 == j.1 && i.1 == j.0 && i.0 != i.1 {
-                if !res.contains(&i.0) {
-                    res.push(i.0);
-                }
-                if !res.contains(&j.0) {
-                    res.push(j.0);
-                }
+                res.push(i.0);
+                res.push(j.0);
             }
         }
     }
     res.sort();
+    res.dedup();
     res
 }
 
