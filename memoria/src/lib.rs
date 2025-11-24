@@ -7,7 +7,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq)]
 pub enum DbError {
-    #[error("execution error")]
+    #[error("execution error: {0}")]
     ExecutionError(#[from] ExecutionError),
 
     #[error("parsing error: {0}")]
@@ -46,7 +46,7 @@ pub enum ExecutionError {
     #[error("Invalid key type")]
     InvalidKeyType,
 
-    #[error("{0}")]
+    #[error("IoError: {0}")]
     IoError(std::io::ErrorKind),
 }
 

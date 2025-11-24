@@ -43,10 +43,10 @@ pub enum ParseError {
     IllegalByGrammarParseBoolError(#[from] std::str::ParseBoolError),
 
     /// Error originating from the `pest` library.
-    #[error("{0}")]
+    #[error("Invalid Rule: {0}")]
     ParseError(#[from] Box<pest::error::Error<Rule>>),
 
-    #[error("{0}")]
+    #[error("TryFromIntError: {0}")]
     TryFromIntError(#[from] std::num::TryFromIntError),
 }
 
