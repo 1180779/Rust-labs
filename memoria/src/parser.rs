@@ -609,17 +609,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_fail_incomplete_query() {
-        let bad_query = "CREATE users KEY";
-        let result = parse_query(bad_query);
-        assert!(
-            result.is_err(),
-            "Expected parsing to fail for incomplete query"
-        );
-    }
-
-    #[test]
-    fn parse_fail_wrong_keyword() {
+    fn parse_fail_select_wrong_keyword() {
         let bad_query = "SELECT * TO users";
         let result = parse_query(bad_query);
         assert!(
@@ -629,7 +619,17 @@ mod tests {
     }
 
     #[test]
-    fn parse_fail_malformed_insert() {
+    fn parse_fail_create_incomplete() {
+        let bad_query = "CREATE users KEY";
+        let result = parse_query(bad_query);
+        assert!(
+            result.is_err(),
+            "Expected parsing to fail for incomplete query"
+        );
+    }
+
+    #[test]
+    fn parse_fail_insert_malformed() {
         let bad_query = "INSERT name = 'test', age: 30 INTO users";
         let result = parse_query(bad_query);
         assert!(
@@ -679,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn read_from() {
+    fn read_from_relative_path_unix() {
         let select = "READ_FROM ./Documents/my_queries/session_2";
         let expected_result = Query::ReadFrom(ReadFromQuery {
             file: "./Documents/my_queries/session_2",

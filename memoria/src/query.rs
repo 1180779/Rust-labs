@@ -1,7 +1,6 @@
 use std::fmt::{Debug, Display, Formatter};
 
 mod sealed {
-    // This trait is private to the module, so only this crate can implement it.
     pub trait Sealed {}
     impl Sealed for String {}
     impl Sealed for &str {}
