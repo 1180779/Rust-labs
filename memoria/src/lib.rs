@@ -898,21 +898,6 @@ impl DatabaseKey for String {
     fn field_type() -> FieldType {
         FieldType::String
     }
-
-    fn dbk_new() -> Self {
-        String::new()
-    }
-
-    fn is_equal_to(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn from_pair(str: &str) -> Option<Self> {
-        if str.len() >= 2 {
-            return Some(str[1..str.len() - 1].to_string());
-        }
-        None
-    }
 }
 
 impl DatabaseKey for i64 {
@@ -930,18 +915,6 @@ impl DatabaseKey for i64 {
     fn field_type() -> FieldType {
         FieldType::Int
     }
-
-    fn dbk_new() -> i64 {
-        0
-    }
-
-    fn is_equal_to(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn from_pair(str: &str) -> Option<Self> {
-        str.parse::<i64>().ok()
-    }
 }
 
 pub trait DatabaseKey
@@ -954,9 +927,6 @@ where
     fn get_command_value(value: &Self) -> Value<&str>;
     fn from_command_value(value: &Value<&str>) -> Result<Self, DbError>;
     fn field_type() -> FieldType;
-    fn dbk_new() -> Self;
-    fn is_equal_to(&self, other: &Self) -> bool;
-    fn from_pair(str: &str) -> Option<Self>;
 }
 
 /////////////////////////////////////////////
