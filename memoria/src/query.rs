@@ -65,20 +65,15 @@ impl<K: StrType> Value<K> {
 }
 
 /// Where clause comparison operator
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Default)]
 pub enum Op {
+    #[default]
     Eq,
     Neq,
     Greater,
     GreaterEq,
     Less,
     LessEq,
-}
-
-impl Default for Op {
-    fn default() -> Self {
-        Op::Eq
-    }
 }
 
 impl Display for Op {
@@ -526,20 +521,14 @@ impl From<&OrderBy<&str>> for OrderBy<String> {
     }
 }
 
-pub mod common {
-    pub use super::FieldType;
-    pub use super::Op;
-}
-
 pub mod borrowed {
-    pub use super::common::*;
     use super::*;
 
-    pub type ValueBorrowed<'a> = Value<&'a str>;
-    pub type SelectFieldsBorrowed<'a> = SelectFields<&'a str>;
-    pub type WhereBorrowed<'a> = Where<&'a str>;
-    pub type NewFieldBorrowed<'a> = NewField<&'a str>;
-    pub type InsertValueBorrowed<'a> = InsertValue<&'a str>;
+    // pub type ValueBorrowed<'a> = Value<&'a str>;
+    // pub type SelectFieldsBorrowed<'a> = SelectFields<&'a str>;
+    // pub type WhereBorrowed<'a> = Where<&'a str>;
+    // pub type NewFieldBorrowed<'a> = NewField<&'a str>;
+    // pub type InsertValueBorrowed<'a> = InsertValue<&'a str>;
 
     pub type QueryBorrowed<'a> = Query<&'a str>;
     pub type CreateQueryBorrowed<'a> = CreateQuery<&'a str>;
@@ -550,21 +539,21 @@ pub mod borrowed {
     pub type ReadFromQueryBorrowed<'a> = ReadFromQuery<&'a str>;
 }
 
-pub mod owned {
-    pub use super::common::*;
-    use super::*;
-
-    pub type ValueOwned = Value<String>;
-    pub type SelectFieldsOwned = SelectFields<String>;
-    pub type WhereOwned = Where<String>;
-    pub type NewFieldOwned = NewField<String>;
-    pub type InsertValueOwned = InsertValue<String>;
-
-    pub type QueryOwned = Query<String>;
-    pub type CreateQueryOwned = CreateQuery<String>;
-    pub type SelectQueryOwned = SelectQuery<String>;
-    pub type InsertQueryOwned = InsertQuery<String>;
-    pub type DeleteQueryOwned = DeleteQuery<String>;
-    pub type SaveAsQueryOwned = SaveAsQuery<String>;
-    pub type ReadFromQueryOwned = ReadFromQuery<String>;
-}
+// pub mod owned {
+//     pub use super::common::*;
+//     use super::*;
+//
+//     // pub type ValueOwned = Value<String>;
+//     // pub type SelectFieldsOwned = SelectFields<String>;
+//     // pub type WhereOwned = Where<String>;
+//     // pub type NewFieldOwned = NewField<String>;
+//     // pub type InsertValueOwned = InsertValue<String>;
+//
+//     // pub type QueryOwned = Query<String>;
+//     // pub type CreateQueryOwned = CreateQuery<String>;
+//     // pub type SelectQueryOwned = SelectQuery<String>;
+//     // pub type InsertQueryOwned = InsertQuery<String>;
+//     // pub type DeleteQueryOwned = DeleteQuery<String>;
+//     // pub type SaveAsQueryOwned = SaveAsQuery<String>;
+//     // pub type ReadFromQueryOwned = ReadFromQuery<String>;
+// }
