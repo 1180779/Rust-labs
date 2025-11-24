@@ -293,6 +293,13 @@ impl AnyDatabase {
 }
 
 impl<K: StrType, L: StrType> SelectResult<K, L> {
+    ///
+    /// Pads the given string `s` to fit within a cell of specified `width`.
+    ///
+    /// The function ensures that the string is formatted with a leading space,
+    /// followed by the original string, and padded with trailing spaces
+    /// to match the desired width.
+    ///
     fn pad_cell(s: &str, width: usize) -> String {
         let mut out = String::new();
         out.push(' ');
@@ -303,6 +310,20 @@ impl<K: StrType, L: StrType> SelectResult<K, L> {
         out
     }
 
+    ///
+    /// Constructs a 2D vector representation of the data's columns from the records.
+    ///
+    /// Iterates over the `fields` and `records` to group values from each
+    /// record by their corresponding field index, creating a columnar representation
+    /// where each inner vector contains all the values for a specific field across all records.
+    ///
+    /// # Returns
+    /// A `Vec<Vec<String>>` where each inner `Vec<String>` represents the values of a single
+    /// field (column) across all records:
+    /// - The outer vector has the same length as the number of fields.
+    /// - Each inner vector corresponds to one field and contains strings representing
+    ///   the values in that field for all records.
+    ///
     fn build_columns(&self) -> Vec<Vec<String>> {
         let mut cols: Vec<Vec<String>> = Vec::with_capacity(self.fields.len());
         for _ in 0..self.fields.len() {
@@ -318,9 +339,26 @@ impl<K: StrType, L: StrType> SelectResult<K, L> {
         cols
     }
 
+    ///
+    /// Calculates the widths of each column based on the headers and content of the corresponding columns.
+    ///
+    /// This function determines the maximum width required for each column in order to properly format
+    /// a table-like structure. It calculates the width of each column based on the length of the header
+    /// fields (`self.fields`) and the content inside the `cols` parameter.
+    /// Additional padding is then added to each column to account for the margin.
+    ///
+    /// # Parameters
+    ///
+    /// * `cols`: A slice of vectors, where each inner vector contains strings corresponding to
+    ///   the content of a column in the table.
+    ///
+    /// # Returns
+    ///
+    /// A `Vec<usize>` where each value represents the width of the corresponding column, including padding.
+    ///
     fn calculate_widths(&self, cols: &[Vec<String>]) -> Vec<usize> {
         const MARGIN: usize = 2; // spaces padding (one left, one right)
-        let mut widths: Vec<usize> = self.fields.iter().map(|h| h.str_len()).collect();
+        let mut widths: Vec<usize> = self.fields.iter().map(|h| h.as_ref().len()).collect();
 
         for (i, col) in cols.iter().enumerate() {
             for cell in col {
@@ -334,6 +372,20 @@ impl<K: StrType, L: StrType> SelectResult<K, L> {
         widths
     }
 
+    ///
+    /// Constructs a table row separator based on provided column widths and border characters.
+    ///
+    /// # Parameters
+    /// - `widths`: A slice of `usize` values representing the width of each column in the table.
+    /// - `left`: A `char` to use for the left border of the separator.
+    /// - `mid`: `A char` to use as the separator between columns.
+    /// - `right`: A `char` to use for the right border of the separator.
+    /// - `horiz`: A `char` to use for the horizontal filling between column separators.
+    ///
+    /// # Returns
+    /// A `String` representing a horizontal separator for a table, constructed with the provided
+    /// widths and characters.
+    ///
     fn build_separator(
         widths: &[usize],
         left: char,
@@ -353,6 +405,20 @@ impl<K: StrType, L: StrType> SelectResult<K, L> {
         sep
     }
 
+
+    /// Constructs a formatted table row as a string by aligning each cell's content
+    /// to the specified column widths and separating them with vertical bars (`│`).
+    ///
+    /// # Arguments
+    ///
+    /// * `cells` - A slice of string slices (`&[&str]`) representing the content of each cell in the row.
+    /// * `widths` - A slice of column widths (`&[usize]`), where each value specifies the width of the corresponding column.
+    ///
+    /// # Returns
+    ///
+    /// A `String` representing the formatted table row. Each cell's content is padded
+    /// to match the specified column width and enclosed between vertical bars (`│`).
+    ///
     fn build_row(cells: &[&str], widths: &[usize]) -> String {
         let mut row = String::new();
         row.push('│');
@@ -365,6 +431,32 @@ impl<K: StrType, L: StrType> SelectResult<K, L> {
 }
 
 impl<K: StrType, L: StrType> Display for SelectResult<K, L> {
+    ///
+    /// Formats the SelectResult structure as a table and writes it to the provided formatter.
+    ///
+    /// # Parameters
+    /// - `f`: A mutable reference to a [`Formatter`].
+    ///
+    /// # Returns
+    /// On success, this function returns `Ok(())`. If there is an error written to the `Formatter`,
+    ///  an `std::fmt::Error` is returned.
+    ///
+    /// # Table Structure
+    /// The table is rendered with UTF-8 box-drawing characters for aesthetics. Specifically:
+    /// - Corners use characters such as `┌`, `┐`, `└`, and `┘`.
+    /// - Horizontal separators are created with `─`.
+    /// - Vertical separators use `┬` and `┼` among others to separate columns.
+    ///
+    /// # Example Output
+    /// ```plaintext
+    /// ┌──────┬───────┬───────┐
+    /// │ Col1 │ Col2  │ Col3  │
+    /// ├──────┼───────┼───────┤
+    /// │ Val1 │ Val2  │ Val3  │
+    /// │ Val4 │ Val5  │ Val6  │
+    /// └──────┴───────┴───────┘
+    /// ```
+    ///
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let cols = self.build_columns();
         let widths = self.calculate_widths(&cols);

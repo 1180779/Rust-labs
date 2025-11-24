@@ -9,19 +9,10 @@ mod sealed {
 pub trait StrType:
     sealed::Sealed + AsRef<str> + Clone + PartialEq + PartialOrd + Display + Default
 {
-    fn str_len(&self) -> usize;
 }
 
-impl StrType for String {
-    fn str_len(&self) -> usize {
-        self.len()
-    }
-}
-impl StrType for &str {
-    fn str_len(&self) -> usize {
-        self.len()
-    }
-}
+impl StrType for String {}
+impl StrType for &str {}
 
 #[derive(Debug, PartialOrd, Clone)]
 pub enum Value<K: StrType> {
