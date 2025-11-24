@@ -517,11 +517,13 @@ pub trait Command<K: StrType, L: StrType> {
 }
 
 impl Where<&str> {
+    ///
     /// Apply the where-clause to a `Record`.
     ///
     /// Looks up the field named by the clause in `value.values`. If present,
     /// converts the stored value into a `CommandValue` and compares it using
     /// `compare_value`. Missing fields result in `false`.
+    ///
     pub fn filter(&self, value: &Record) -> bool {
         value
             .values
@@ -938,7 +940,38 @@ where
 mod tests {
     use super::*;
 
-    pub fn db_sample() -> Database<String> {
+    pub fn sample_int_db_from_string() -> Database<i64> {
+        let mut any_db = IntDatabase(Database::<i64>::new());
+
+        let mut create = parse_command(&mut any_db, "CREATE books KEY id FIELDS title: STRING, author: STRING, year: INT").unwrap();
+        create.execute().unwrap();
+
+        let mut insert = parse_command(&mut any_db, "INSERT id=1, title='The Great Gatsby', author='F. Scott Fitzgerald', year=1925 INTO books").unwrap();
+        insert.execute().unwrap();
+
+        let mut insert = parse_command(&mut any_db, "INSERT id=2, title='1984', author='George Orwell', year=1949 INTO books").unwrap();
+        insert.execute().unwrap();
+
+        let mut insert = parse_command(&mut any_db, "INSERT id=3, title='To Kill a Mockingbird', author='Harper Lee', year=1960 INTO books").unwrap();
+        insert.execute().unwrap();
+
+        let IntDatabase(db) = any_db else {
+            unreachable!()
+        };
+        db
+    }
+
+    fn assert_int_db_structure_unchanged(db: &Database<i64>) {
+        assert!(db.tables.contains_key("books"));
+        let table = db.tables.get("books").unwrap();
+        assert_eq!(table.key_field, "id");
+        assert_eq!(table.types.get("id"), Some(&FieldType::Int));
+        assert_eq!(table.types.get("title"), Some(&FieldType::String));
+        assert_eq!(table.types.get("author"), Some(&FieldType::String));
+        assert_eq!(table.types.get("year"), Some(&FieldType::Int));
+    }
+
+    pub fn sample_string_db_from_string() -> Database<String> {
         let mut any_db = StringDatabase(Database::<String>::new());
 
         let mut create = parse_command(&mut any_db, "CREATE users KEY id FIELDS name: STRING, surname: STRING, age: INT, married: BOOL, credit_score: FLOAT").unwrap();
@@ -959,7 +992,7 @@ mod tests {
         db
     }
 
-    fn assert_db_sample_structure_unchanged(db: &Database<String>) {
+    fn assert_string_db_structure_unchanged(db: &Database<String>) {
         assert!(db.tables.contains_key("users"));
         let table = db.tables.get("users").unwrap();
         assert_eq!(table.key_field, "id");
@@ -972,14 +1005,46 @@ mod tests {
     }
 
     #[test]
-    fn test_create_table() {
-        let db = db_sample();
-        assert_db_sample_structure_unchanged(&db);
+    fn test_string_create_table_from_string() {
+        let db = sample_string_db_from_string();
+        assert_string_db_structure_unchanged(&db);
     }
 
     #[test]
-    fn test_create_table_already_exists() {
-        let mut db = db_sample();
+    fn test_int_create_table_from_string() {
+        let db = sample_int_db_from_string();
+        assert_int_db_structure_unchanged(&db);
+    }
+
+    #[test]
+    fn test_int_create_table_from_code() {
+        let mut db = Database::<i64>::new();
+        let create = CreateQuery {
+            table: "books",
+            key_field: "id",
+            fields_types: NewFields(vec![
+                NewField {
+                    field: "title",
+                    field_type: FieldType::String,
+                },
+                NewField {
+                    field: "author",
+                    field_type: FieldType::String,
+                },
+                NewField {
+                    field: "year",
+                    field_type: FieldType::Int,
+                },
+            ]),
+        };
+        let mut command = CreateCommand { db: &mut db, query: create };
+        let result = command.execute();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_string_create_table_already_exists_from_code() {
+        let mut db = sample_string_db_from_string();
         let query = CreateQuery {
             table: "users",
             key_field: "id",
@@ -997,12 +1062,38 @@ mod tests {
             result.err().unwrap(),
             DbError::ExecutionError(ExecutionError::TableAlreadyExists("users".into()))
         );
-        assert_db_sample_structure_unchanged(&db);
     }
 
     #[test]
-    fn test_insert() {
-        let mut db = db_sample();
+    fn test_int_insert_from_string() {
+        let mut db = sample_int_db_from_string();
+        let insert_query = "INSERT id=9999, title='Brave New World', author='Aldous Huxley', year=1932 INTO books";
+        let Query::Insert(query) = parse_query(insert_query).unwrap() else {
+            panic!("Expected InsertQuery");
+        };
+        let mut insert_command = InsertCommand {
+            table: db.tables.get_mut("books").unwrap(),
+            query,
+        };
+        let result = insert_command.execute();
+        assert!(result.is_ok());
+        let table = db.tables.get("books").unwrap();
+        assert!(table.records.contains_key(&9999));
+        let record = table.records.get(&9999).unwrap();
+        assert_eq!(
+            record.values.get("title"),
+            Some(&Value::String("Brave New World".to_string()))
+        );
+        assert_eq!(
+            record.values.get("author"),
+            Some(&Value::String("Aldous Huxley".to_string()))
+        );
+        assert_eq!(record.values.get("year"), Some(&Value::Int(1932)));
+    }
+
+    #[test]
+    fn test_string_insert_from_code() {
+        let mut db = sample_string_db_from_string();
         let table = db.tables.get_mut("users").unwrap();
 
         let insert_query = InsertQuery {
@@ -1062,8 +1153,8 @@ mod tests {
     }
 
     #[test]
-    fn test_insert_duplicate_key() {
-        let mut db = db_sample();
+    fn test_string_insert_duplicate_key_from_code() {
+        let mut db = sample_string_db_from_string();
 
         let insert_query = InsertQuery {
             table: "users",
@@ -1111,8 +1202,8 @@ mod tests {
     }
 
     #[test]
-    fn test_select_all_fields() {
-        let db = db_sample();
+    fn test_string_select_all_fields_from_code() {
+        let db = sample_string_db_from_string();
 
         let select_query = SelectQuery {
             table: "users",
@@ -1136,8 +1227,34 @@ mod tests {
     }
 
     #[test]
-    fn test_select_specific_fields() {
-        let db = db_sample();
+    fn test_int_select_specific_fields_from_string() {
+        let db = sample_int_db_from_string();
+
+        let select_query = "SELECT title, year FROM books";
+        let Query::Select(query) = parse_query(select_query).unwrap() else {
+            panic!("Expected SelectQuery");
+        };
+        let mut select_command = SelectCommand {
+            table: db.tables.get("books").unwrap(),
+            query,
+        };
+        let result = select_command.execute();
+        assert!(result.is_ok());
+
+        if let Ok(CommandResult::Select(select_result)) = result {
+            assert_eq!(select_result.records.len(), 3);
+            for record in select_result.records {
+                assert_eq!(record.values[0].field_type(), FieldType::String);
+                assert_eq!(record.values[1].field_type(), FieldType::Int);
+            }
+        } else {
+            panic!("Expected a SelectResult");
+        }
+    }
+
+    #[test]
+    fn test_string_select_specific_fields_from_code() {
+        let db = sample_string_db_from_string();
 
         let select_query = SelectQuery {
             table: "users",
@@ -1165,8 +1282,29 @@ mod tests {
     }
 
     #[test]
-    fn test_delete() {
-        let mut db = db_sample();
+    fn test_int_delete_from_string() {
+        let mut db = sample_int_db_from_string();
+
+        let delete_query = "DELETE 1 FROM books";
+        let Query::Delete(query) = parse_query(delete_query).unwrap() else {
+            panic!("Expected DeleteQuery");
+        };
+        let mut delete_command = DeleteCommand {
+            table: db.tables.get_mut("books").unwrap(),
+            query,
+        };
+        let result = delete_command.execute();
+        assert!(result.is_ok());
+
+        let table = db.tables.get("books").unwrap();
+        assert!(!table.records.contains_key(&1));
+        assert!(table.records.contains_key(&2));
+        assert!(table.records.contains_key(&3));
+    }
+
+    #[test]
+    fn test_string_delete_from_code() {
+        let mut db = sample_string_db_from_string();
 
         let delete_query = DeleteQuery {
             table: "users",
@@ -1185,8 +1323,8 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_non_existent_key() {
-        let mut db = db_sample();
+    fn test_string_delete_non_existent_key_from_code() {
+        let mut db = sample_string_db_from_string();
 
         let delete_query = DeleteQuery {
             table: "users",
@@ -1214,7 +1352,7 @@ mod tests {
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod select_where_clause_tests {
     use super::*;
-    use tests::db_sample;
+    use tests::sample_string_db_from_string;
 
     fn execute_select_with_where<'a: 'b, 'b>(
         db: &'a Database<String>,
@@ -1243,7 +1381,7 @@ mod select_where_clause_tests {
 
     #[test]
     fn test_select_where_age_greater_than() {
-        let db = db_sample();
+        let db = sample_string_db_from_string();
         let where_clause = Where {
             field: "age",
             op: Op::Greater,
@@ -1263,7 +1401,7 @@ mod select_where_clause_tests {
 
     #[test]
     fn test_select_where_surname_equals() {
-        let db = db_sample();
+        let db = sample_string_db_from_string();
         let where_clause = Where {
             field: "surname",
             op: Op::Eq,

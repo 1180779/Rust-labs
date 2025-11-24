@@ -2,8 +2,8 @@ Q = { S | C | I | D | SA | RF }
 
 // types
 float = { "-"? ~ value ~ "." ~ value? }
-string = { "'" ~ string_body+ ~ "'" | "\"" ~ string_body ~ "\"" }
-string_body = { (LETTER | MARK | NUMBER | OTHER | ":" | "_" | "-" | " ")+ }
+string = { "'" ~ string_body ~ "'" | "\"" ~ string_body ~ "\"" }
+string_body = { (LETTER | MARK | NUMBER | OTHER | ":" | "_" | "-" | " " | "." | "," | ";" )+ }
 int = { "-"? ~ value }
 bool = { ^"TRUE" | ^"FALSE" }
 
