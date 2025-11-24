@@ -570,6 +570,62 @@ mod tests {
         }
     }
 
+    mod select_order_by_limit {
+        use super::*;
+
+        #[test]
+        fn select_with_limit() {
+            let select = "SELECT * FROM logs LIMIT 100";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "logs",
+                fields: SelectFields::AllFields(),
+                where_clause: None,
+                order_by: None,
+                limit: Some(Limit { count: 100 }),
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn select_with_order_by_limit() {
+            let select = "SELECT name, score FROM players ORDER_BY score DESC LIMIT 5";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "players",
+                fields: SelectFields::Fields(vec!["name", "score"]),
+                where_clause: None,
+                order_by: Some(OrderBy {
+                    field: "score",
+                    descending: true,
+                }),
+                limit: Some(Limit { count: 5 }),
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn select_with_where_order_by_limit() {
+            let select = "SELECT * FROM sales WHERE amount >= 1000 ORDER_BY date LIMIT 10";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "sales",
+                fields: SelectFields::AllFields(),
+                where_clause: Some(Where {
+                    field: "amount",
+                    op: Op::GreaterEq,
+                    value: Value::Int(1000),
+                }),
+                order_by: Some(OrderBy {
+                    field: "date",
+                    descending: false,
+                }),
+                limit: Some(Limit { count: 10 }),
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+    }
+
     mod insert {
         use super::*;
 

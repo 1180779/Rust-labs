@@ -1124,7 +1124,7 @@ mod tests {
 
             let select_query = SelectQuery {
                 table: "users",
-                fields: SelectFields::Fields(vec!["name", "age"]),
+                fields: SelectFields::Fields(vec!["name", "age", "married"]),
                 where_clause: None,
                 limit: None,
                 order_by: None,
@@ -1141,6 +1141,7 @@ mod tests {
                 for record in select_result.records {
                     assert_eq!(record.values[0].field_type(), FieldType::String);
                     assert_eq!(record.values[1].field_type(), FieldType::Int);
+                    assert_eq!(record.values[2].field_type(), FieldType::Bool);
                 }
             } else {
                 panic!("Expected a SelectResult");
@@ -1210,6 +1211,61 @@ mod tests {
             assert_eq!(select_result.records.len(), 1);
             let record = &select_result.records[0];
             assert_eq!(record.values[1], Value::String("Nowak"));
+        }
+    }
+
+    mod select_order_by_limit {
+        use super::*;
+
+        #[test]
+        fn test_string_select_limit_from_string() {
+            let db = sample_string_db_from_string();
+
+            let select_query = "SELECT name, age FROM users LIMIT 2";
+            let Query::Select(query) = parse_query(select_query).unwrap() else {
+                panic!("Expected SelectQuery");
+            };
+            let mut select_command = SelectCommand {
+                table: db.tables.get("users").unwrap(),
+                query,
+            };
+            let result = select_command.execute();
+            assert!(result.is_ok());
+
+            if let Ok(CommandResult::Select(select_result)) = result {
+                assert_eq!(select_result.records.len(), 2);
+            } else {
+                panic!("Expected a SelectResult");
+            }
+        }
+
+        #[test]
+        fn test_int_select_order_by_desc_limit_from_code() {
+            let db = sample_int_db_from_string();
+
+            let select_query = SelectQuery {
+                table: "books",
+                fields: SelectFields::Fields(vec!["title", "year"]),
+                where_clause: None,
+                limit: Some(Limit { count: 2 }),
+                order_by: Some(OrderBy {
+                    field: "year",
+                    descending: true,
+                }),
+            };
+            let mut select_command = SelectCommand {
+                table: db.tables.get("books").unwrap(),
+                query: select_query,
+            };
+            let result = select_command.execute();
+            assert!(result.is_ok());
+
+            if let Ok(CommandResult::Select(select_result)) = result {
+                assert_eq!(select_result.records.len(), 2);
+                assert!(select_result.records[0].values[1] >= select_result.records[1].values[1]);
+            } else {
+                panic!("Expected a SelectResult");
+            }
         }
     }
 
