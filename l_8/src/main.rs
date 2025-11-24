@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::cell::{Cell, LazyCell, OnceCell, RefCell};
+use std::cell::{Cell, LazyCell, OnceCell, RefCell, RefMut};
 use std::collections::VecDeque;
 use std::fs;
 use std::io::read_to_string;
@@ -198,7 +198,14 @@ impl Vertex {
     /// Zadbaj o to, aby cykl nie powodował wycieków pamięci!
     /// (odpowiednio używaj `create_neighbour` i `link_to`)
     pub fn cycle(n: usize) -> Rc<RefCell<Vertex>> {
-        todo!()
+        let mut first_rc: Rc<RefCell<Vertex>> = Rc::new(RefCell::new(Vertex::new()));
+        let mut last = first_rc.borrow_mut();
+        for i in 0..n {
+            let neighbour = last.create_neighbour();
+            last = neighbour.borrow_mut();
+        }
+        last.link_to(&first_rc);
+        first_rc
     }
 }
 
