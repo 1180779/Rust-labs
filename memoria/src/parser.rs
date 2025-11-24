@@ -392,7 +392,32 @@ fn parse_query_rf<'a, K: ParsableStrType<'a, K>>(
     Ok(Query::ReadFrom(ReadFromQuery { file }))
 }
 
-/// Parse input query and translate the results into internal command representation
+///
+/// Parses the given query string into a `QueryBorrowed`.
+///
+/// # Arguments
+/// - `query` (`&str`): The query string to be parsed.
+///
+/// # Returns
+/// - `Result<QueryBorrowed<'_>, ParseError>`:
+///   - On success, returns a `QueryBorrowed` object representing the parsed query.
+///   - On failure, returns a `ParseError` describing the reason for failure.
+///
+/// # Example
+/// ```rust
+/// let query = "SELECT * FROM users WHERE age > 30";
+/// match parse_query(query) {
+///     Ok(parsed_query) => {
+///         // Use the parsed query
+///         println!("{}", parsed_query);
+///     }
+///     Err(error) => {
+///         // Handle the error
+///         eprintln!("Failed to parse query: {}", error);
+///     }
+/// }
+/// ```
+///
 pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed<'_>, ParseError> {
     let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(Box::new)?;
 
