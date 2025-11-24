@@ -931,10 +931,6 @@ where
     fn field_type() -> FieldType;
 }
 
-/////////////////////////////////////////////
-// tests
-/////////////////////////////////////////////
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -1004,414 +1000,428 @@ mod tests {
         assert_eq!(table.types.get("credit_score"), Some(&FieldType::Float));
     }
 
-    #[test]
-    fn test_string_create_table_from_string() {
-        let db = sample_string_db_from_string();
-        assert_string_db_structure_unchanged(&db);
-    }
+    mod create {
+        use super::*;
 
-    #[test]
-    fn test_int_create_table_from_string() {
-        let db = sample_int_db_from_string();
-        assert_int_db_structure_unchanged(&db);
-    }
+        #[test]
+        fn test_string_create_table_from_string() {
+            let db = sample_string_db_from_string();
+            assert_string_db_structure_unchanged(&db);
+        }
 
-    #[test]
-    fn test_int_create_table_from_code() {
-        let mut db = Database::<i64>::new();
-        let create = CreateQuery {
-            table: "books",
-            key_field: "id",
-            fields_types: NewFields(vec![
-                NewField {
-                    field: "title",
+        #[test]
+        fn test_int_create_table_from_string() {
+            let db = sample_int_db_from_string();
+            assert_int_db_structure_unchanged(&db);
+        }
+
+        #[test]
+        fn test_int_create_table_from_code() {
+            let mut db = Database::<i64>::new();
+            let create = CreateQuery {
+                table: "books",
+                key_field: "id",
+                fields_types: NewFields(vec![
+                    NewField {
+                        field: "title",
+                        field_type: FieldType::String,
+                    },
+                    NewField {
+                        field: "author",
+                        field_type: FieldType::String,
+                    },
+                    NewField {
+                        field: "year",
+                        field_type: FieldType::Int,
+                    },
+                ]),
+            };
+            let mut command = CreateCommand { db: &mut db, query: create };
+            let result = command.execute();
+            assert!(result.is_ok());
+        }
+
+        #[test]
+        fn test_string_create_table_already_exists_from_code() {
+            let mut db = sample_string_db_from_string();
+            let query = CreateQuery {
+                table: "users",
+                key_field: "id",
+                fields_types: NewFields(vec![NewField {
+                    field: "pet_name",
                     field_type: FieldType::String,
-                },
-                NewField {
-                    field: "author",
-                    field_type: FieldType::String,
-                },
-                NewField {
-                    field: "year",
-                    field_type: FieldType::Int,
-                },
-            ]),
-        };
-        let mut command = CreateCommand { db: &mut db, query: create };
-        let result = command.execute();
-        assert!(result.is_ok());
-    }
+                }]),
+            };
+            let mut command = CreateCommand { db: &mut db, query };
 
-    #[test]
-    fn test_string_create_table_already_exists_from_code() {
-        let mut db = sample_string_db_from_string();
-        let query = CreateQuery {
-            table: "users",
-            key_field: "id",
-            fields_types: NewFields(vec![NewField {
-                field: "pet_name",
-                field_type: FieldType::String,
-            }]),
-        };
-        let mut command = CreateCommand { db: &mut db, query };
+            let result = command.execute();
 
-        let result = command.execute();
-
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            DbError::ExecutionError(ExecutionError::TableAlreadyExists("users".into()))
-        );
-    }
-
-    #[test]
-    fn test_int_insert_from_string() {
-        let mut db = sample_int_db_from_string();
-        let insert_query = "INSERT id=9999, title='Brave New World', author='Aldous Huxley', year=1932 INTO books";
-        let Query::Insert(query) = parse_query(insert_query).unwrap() else {
-            panic!("Expected InsertQuery");
-        };
-        let mut insert_command = InsertCommand {
-            table: db.tables.get_mut("books").unwrap(),
-            query,
-        };
-        let result = insert_command.execute();
-        assert!(result.is_ok());
-        let table = db.tables.get("books").unwrap();
-        assert!(table.records.contains_key(&9999));
-        let record = table.records.get(&9999).unwrap();
-        assert_eq!(
-            record.values.get("title"),
-            Some(&Value::String("Brave New World".to_string()))
-        );
-        assert_eq!(
-            record.values.get("author"),
-            Some(&Value::String("Aldous Huxley".to_string()))
-        );
-        assert_eq!(record.values.get("year"), Some(&Value::Int(1932)));
-    }
-
-    #[test]
-    fn test_string_insert_from_code() {
-        let mut db = sample_string_db_from_string();
-        let table = db.tables.get_mut("users").unwrap();
-
-        let insert_query = InsertQuery {
-            table: "users",
-            insert_values: vec![
-                InsertValue {
-                    field: "id",
-                    value: Value::String("9999"),
-                },
-                InsertValue {
-                    field: "name",
-                    value: Value::String("John"),
-                },
-                InsertValue {
-                    field: "surname",
-                    value: Value::String("Doe"),
-                },
-                InsertValue {
-                    field: "age",
-                    value: Value::Int(42),
-                },
-                InsertValue {
-                    field: "married",
-                    value: Value::Bool(true),
-                },
-                InsertValue {
-                    field: "credit_score",
-                    value: Value::Float(9.49),
-                },
-            ],
-        };
-        let mut insert_command = InsertCommand {
-            table,
-            query: insert_query,
-        };
-
-        let result = insert_command.execute();
-        assert!(result.is_ok());
-
-        let table = db.tables.get("users").unwrap();
-        assert!(table.records.contains_key("9999"));
-        let record = table.records.get("9999").unwrap();
-        assert_eq!(
-            record.values.get("name"),
-            Some(&Value::String("John".to_string()))
-        );
-        assert_eq!(
-            record.values.get("surname"),
-            Some(&Value::String("Doe".to_string()))
-        );
-        assert_eq!(record.values.get("age"), Some(&Value::Int(42)));
-        assert_eq!(record.values.get("married"), Some(&Value::Bool(true)));
-        assert_eq!(
-            record.values.get("credit_score"),
-            Some(&Value::Float(9.49))
-        );
-    }
-
-    #[test]
-    fn test_string_insert_duplicate_key_from_code() {
-        let mut db = sample_string_db_from_string();
-
-        let insert_query = InsertQuery {
-            table: "users",
-            insert_values: vec![
-                InsertValue {
-                    field: "id",
-                    value: Value::String("1"),
-                },
-                InsertValue {
-                    field: "name",
-                    value: Value::String("Jane"),
-                },
-                InsertValue {
-                    field: "surname",
-                    value: Value::String("Dane"),
-                },
-                InsertValue {
-                    field: "age",
-                    value: Value::Int(40),
-                },
-                InsertValue {
-                    field: "married",
-                    value: Value::Bool(false),
-                },
-                InsertValue {
-                    field: "credit_score",
-                    value: Value::Float(543.21),
-                },
-            ],
-        };
-        let mut command = InsertCommand {
-            table: db.tables.get_mut("users").unwrap(),
-            query: insert_query,
-        };
-        let result = command.execute();
-
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            DbError::ExecutionError(ExecutionError::RecordWithKeyAlreadyExists(
-                "1".into(),
-                "users".into()
-            ))
-        );
-    }
-
-    #[test]
-    fn test_string_select_all_fields_from_code() {
-        let db = sample_string_db_from_string();
-
-        let select_query = SelectQuery {
-            table: "users",
-            fields: SelectFields::AllFields(),
-            where_clause: None,
-            limit: None,
-            order_by: None,
-        };
-        let mut select_command = SelectCommand {
-            table: db.tables.get("users").unwrap(),
-            query: select_query,
-        };
-        let result = select_command.execute();
-        assert!(result.is_ok());
-
-        if let Ok(CommandResult::Select(select_result)) = result {
-            assert_eq!(select_result.records.len(), 3);
-        } else {
-            panic!("Expected a SelectResult");
+            assert!(result.is_err());
+            assert_eq!(
+                result.err().unwrap(),
+                DbError::ExecutionError(ExecutionError::TableAlreadyExists("users".into()))
+            );
         }
     }
 
-    #[test]
-    fn test_int_select_specific_fields_from_string() {
-        let db = sample_int_db_from_string();
+    mod select {
+        use super::*;
 
-        let select_query = "SELECT title, year FROM books";
-        let Query::Select(query) = parse_query(select_query).unwrap() else {
-            panic!("Expected SelectQuery");
-        };
-        let mut select_command = SelectCommand {
-            table: db.tables.get("books").unwrap(),
-            query,
-        };
-        let result = select_command.execute();
-        assert!(result.is_ok());
+        #[test]
+        fn test_string_select_all_fields_from_code() {
+            let db = sample_string_db_from_string();
 
-        if let Ok(CommandResult::Select(select_result)) = result {
-            assert_eq!(select_result.records.len(), 3);
-            for record in select_result.records {
-                assert_eq!(record.values[0].field_type(), FieldType::String);
-                assert_eq!(record.values[1].field_type(), FieldType::Int);
+            let select_query = SelectQuery {
+                table: "users",
+                fields: SelectFields::AllFields(),
+                where_clause: None,
+                limit: None,
+                order_by: None,
+            };
+            let mut select_command = SelectCommand {
+                table: db.tables.get("users").unwrap(),
+                query: select_query,
+            };
+            let result = select_command.execute();
+            assert!(result.is_ok());
+
+            if let Ok(CommandResult::Select(select_result)) = result {
+                assert_eq!(select_result.records.len(), 3);
+            } else {
+                panic!("Expected a SelectResult");
             }
-        } else {
-            panic!("Expected a SelectResult");
         }
-    }
 
-    #[test]
-    fn test_string_select_specific_fields_from_code() {
-        let db = sample_string_db_from_string();
+        #[test]
+        fn test_int_select_specific_fields_from_string() {
+            let db = sample_int_db_from_string();
 
-        let select_query = SelectQuery {
-            table: "users",
-            fields: SelectFields::Fields(vec!["name", "age"]),
-            where_clause: None,
-            limit: None,
-            order_by: None,
-        };
-        let mut select_command = SelectCommand {
-            table: db.tables.get("users").unwrap(),
-            query: select_query,
-        };
-        let result = select_command.execute();
-        assert!(result.is_ok());
+            let select_query = "SELECT title, year FROM books";
+            let Query::Select(query) = parse_query(select_query).unwrap() else {
+                panic!("Expected SelectQuery");
+            };
+            let mut select_command = SelectCommand {
+                table: db.tables.get("books").unwrap(),
+                query,
+            };
+            let result = select_command.execute();
+            assert!(result.is_ok());
 
-        if let Ok(CommandResult::Select(select_result)) = result {
-            assert_eq!(select_result.records.len(), 3);
-            for record in select_result.records {
-                assert_eq!(record.values[0].field_type(), FieldType::String);
-                assert_eq!(record.values[1].field_type(), FieldType::Int);
+            if let Ok(CommandResult::Select(select_result)) = result {
+                assert_eq!(select_result.records.len(), 3);
+                for record in select_result.records {
+                    assert_eq!(record.values[0].field_type(), FieldType::String);
+                    assert_eq!(record.values[1].field_type(), FieldType::Int);
+                }
+            } else {
+                panic!("Expected a SelectResult");
             }
-        } else {
-            panic!("Expected a SelectResult");
+        }
+
+        #[test]
+        fn test_string_select_specific_fields_from_code() {
+            let db = sample_string_db_from_string();
+
+            let select_query = SelectQuery {
+                table: "users",
+                fields: SelectFields::Fields(vec!["name", "age"]),
+                where_clause: None,
+                limit: None,
+                order_by: None,
+            };
+            let mut select_command = SelectCommand {
+                table: db.tables.get("users").unwrap(),
+                query: select_query,
+            };
+            let result = select_command.execute();
+            assert!(result.is_ok());
+
+            if let Ok(CommandResult::Select(select_result)) = result {
+                assert_eq!(select_result.records.len(), 3);
+                for record in select_result.records {
+                    assert_eq!(record.values[0].field_type(), FieldType::String);
+                    assert_eq!(record.values[1].field_type(), FieldType::Int);
+                }
+            } else {
+                panic!("Expected a SelectResult");
+            }
         }
     }
 
-    #[test]
-    fn test_int_delete_from_string() {
-        let mut db = sample_int_db_from_string();
+    mod select_where {
+        use super::*;
 
-        let delete_query = "DELETE 1 FROM books";
-        let Query::Delete(query) = parse_query(delete_query).unwrap() else {
-            panic!("Expected DeleteQuery");
-        };
-        let mut delete_command = DeleteCommand {
-            table: db.tables.get_mut("books").unwrap(),
-            query,
-        };
-        let result = delete_command.execute();
-        assert!(result.is_ok());
+        fn execute_select_with_where<'a: 'b, 'b>(
+            db: &'a Database<String>,
+            where_clause: Where<&'b str>,
+        ) -> SelectResult<&'b str, &'a str> {
+            let select_query = SelectQuery {
+                table: "users",
+                fields: SelectFields::Fields(vec!["name", "surname", "age"]),
+                where_clause: Some(where_clause),
+                limit: None,
+                order_by: None,
+            };
+            let mut select_command = SelectCommand {
+                table: db.tables.get("users").unwrap(),
+                query: select_query,
+            };
+            let result = select_command.execute();
+            assert!(result.is_ok());
 
-        let table = db.tables.get("books").unwrap();
-        assert!(!table.records.contains_key(&1));
-        assert!(table.records.contains_key(&2));
-        assert!(table.records.contains_key(&3));
+            if let Ok(CommandResult::Select(select_result)) = result {
+                select_result
+            } else {
+                panic!("Expected a SelectResult");
+            }
+        }
+
+        #[test]
+        fn test_select_where_age_greater_than() {
+            let db = sample_string_db_from_string();
+            let where_clause = Where {
+                field: "age",
+                op: Op::Greater,
+                value: Value::Int(30),
+            };
+
+            let select_result = execute_select_with_where(&db, where_clause);
+
+            assert_eq!(select_result.records.len(), 2);
+            assert!(
+                select_result
+                    .records
+                    .iter()
+                    .all(|r| r.values[2] > Value::Int(30))
+            );
+        }
+
+        #[test]
+        fn test_select_where_surname_equals() {
+            let db = sample_string_db_from_string();
+            let where_clause = Where {
+                field: "surname",
+                op: Op::Eq,
+                value: Value::String("Nowak"),
+            };
+
+            let select_result = execute_select_with_where(&db, where_clause);
+
+            assert_eq!(select_result.records.len(), 1);
+            let record = &select_result.records[0];
+            assert_eq!(record.values[1], Value::String("Nowak"));
+        }
     }
 
-    #[test]
-    fn test_string_delete_from_code() {
-        let mut db = sample_string_db_from_string();
+    mod insert {
+        use super::*;
 
-        let delete_query = DeleteQuery {
-            table: "users",
-            key: Value::String("1"),
-        };
-        let mut delete_command = DeleteCommand {
-            table: db.tables.get_mut("users").unwrap(),
-            query: delete_query,
-        };
-        let result = delete_command.execute();
-        assert!(result.is_ok());
+        #[test]
+        fn test_int_insert_from_string() {
+            let mut db = sample_int_db_from_string();
+            let insert_query = "INSERT id=9999, title='Brave New World', author='Aldous Huxley', year=1932 INTO books";
+            let Query::Insert(query) = parse_query(insert_query).unwrap() else {
+                panic!("Expected InsertQuery");
+            };
+            let mut insert_command = InsertCommand {
+                table: db.tables.get_mut("books").unwrap(),
+                query,
+            };
+            let result = insert_command.execute();
+            assert!(result.is_ok());
+            let table = db.tables.get("books").unwrap();
+            assert!(table.records.contains_key(&9999));
+            let record = table.records.get(&9999).unwrap();
+            assert_eq!(
+                record.values.get("title"),
+                Some(&Value::String("Brave New World".to_string()))
+            );
+            assert_eq!(
+                record.values.get("author"),
+                Some(&Value::String("Aldous Huxley".to_string()))
+            );
+            assert_eq!(record.values.get("year"), Some(&Value::Int(1932)));
+        }
 
-        let table = db.tables.get("users").unwrap();
-        assert!(!table.records.contains_key("1"));
-        assert!(table.records.contains_key("2"));
+        #[test]
+        fn test_string_insert_from_code() {
+            let mut db = sample_string_db_from_string();
+            let table = db.tables.get_mut("users").unwrap();
+
+            let insert_query = InsertQuery {
+                table: "users",
+                insert_values: vec![
+                    InsertValue {
+                        field: "id",
+                        value: Value::String("9999"),
+                    },
+                    InsertValue {
+                        field: "name",
+                        value: Value::String("John"),
+                    },
+                    InsertValue {
+                        field: "surname",
+                        value: Value::String("Doe"),
+                    },
+                    InsertValue {
+                        field: "age",
+                        value: Value::Int(42),
+                    },
+                    InsertValue {
+                        field: "married",
+                        value: Value::Bool(true),
+                    },
+                    InsertValue {
+                        field: "credit_score",
+                        value: Value::Float(9.49),
+                    },
+                ],
+            };
+            let mut insert_command = InsertCommand {
+                table,
+                query: insert_query,
+            };
+
+            let result = insert_command.execute();
+            assert!(result.is_ok());
+
+            let table = db.tables.get("users").unwrap();
+            assert!(table.records.contains_key("9999"));
+            let record = table.records.get("9999").unwrap();
+            assert_eq!(
+                record.values.get("name"),
+                Some(&Value::String("John".to_string()))
+            );
+            assert_eq!(
+                record.values.get("surname"),
+                Some(&Value::String("Doe".to_string()))
+            );
+            assert_eq!(record.values.get("age"), Some(&Value::Int(42)));
+            assert_eq!(record.values.get("married"), Some(&Value::Bool(true)));
+            assert_eq!(
+                record.values.get("credit_score"),
+                Some(&Value::Float(9.49))
+            );
+        }
+
+        #[test]
+        fn test_string_insert_duplicate_key_from_code() {
+            let mut db = sample_string_db_from_string();
+
+            let insert_query = InsertQuery {
+                table: "users",
+                insert_values: vec![
+                    InsertValue {
+                        field: "id",
+                        value: Value::String("1"),
+                    },
+                    InsertValue {
+                        field: "name",
+                        value: Value::String("Jane"),
+                    },
+                    InsertValue {
+                        field: "surname",
+                        value: Value::String("Dane"),
+                    },
+                    InsertValue {
+                        field: "age",
+                        value: Value::Int(40),
+                    },
+                    InsertValue {
+                        field: "married",
+                        value: Value::Bool(false),
+                    },
+                    InsertValue {
+                        field: "credit_score",
+                        value: Value::Float(543.21),
+                    },
+                ],
+            };
+            let mut command = InsertCommand {
+                table: db.tables.get_mut("users").unwrap(),
+                query: insert_query,
+            };
+            let result = command.execute();
+
+            assert!(result.is_err());
+            assert_eq!(
+                result.err().unwrap(),
+                DbError::ExecutionError(ExecutionError::RecordWithKeyAlreadyExists(
+                    "1".into(),
+                    "users".into()
+                ))
+            );
+        }
     }
 
-    #[test]
-    fn test_string_delete_non_existent_key_from_code() {
-        let mut db = sample_string_db_from_string();
+    mod delete {
+        use super::*;
 
-        let delete_query = DeleteQuery {
-            table: "users",
-            key: Value::String("999"),
-        };
-        let mut delete_command = DeleteCommand {
-            table: db.tables.get_mut("users").unwrap(),
-            query: delete_query,
-        };
-        let result = delete_command.execute();
-        assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap(),
-            DbError::ExecutionError(ExecutionError::RecordWithKeyNotFound(
-                Value::String("999").to_string(),
-                "users".into()
-            ))
-        );
-        let table = db.tables.get("users").unwrap();
-        assert_eq!(table.records.len(), 3);
+        #[test]
+        fn test_int_delete_from_string() {
+            let mut db = sample_int_db_from_string();
+
+            let delete_query = "DELETE 1 FROM books";
+            let Query::Delete(query) = parse_query(delete_query).unwrap() else {
+                panic!("Expected DeleteQuery");
+            };
+            let mut delete_command = DeleteCommand {
+                table: db.tables.get_mut("books").unwrap(),
+                query,
+            };
+            let result = delete_command.execute();
+            assert!(result.is_ok());
+
+            let table = db.tables.get("books").unwrap();
+            assert!(!table.records.contains_key(&1));
+            assert!(table.records.contains_key(&2));
+            assert!(table.records.contains_key(&3));
+        }
+
+        #[test]
+        fn test_string_delete_from_code() {
+            let mut db = sample_string_db_from_string();
+
+            let delete_query = DeleteQuery {
+                table: "users",
+                key: Value::String("1"),
+            };
+            let mut delete_command = DeleteCommand {
+                table: db.tables.get_mut("users").unwrap(),
+                query: delete_query,
+            };
+            let result = delete_command.execute();
+            assert!(result.is_ok());
+
+            let table = db.tables.get("users").unwrap();
+            assert!(!table.records.contains_key("1"));
+            assert!(table.records.contains_key("2"));
+        }
+
+        #[test]
+        fn test_string_delete_non_existent_key_from_code() {
+            let mut db = sample_string_db_from_string();
+
+            let delete_query = DeleteQuery {
+                table: "users",
+                key: Value::String("999"),
+            };
+            let mut delete_command = DeleteCommand {
+                table: db.tables.get_mut("users").unwrap(),
+                query: delete_query,
+            };
+            let result = delete_command.execute();
+            assert!(result.is_err());
+            assert_eq!(
+                result.err().unwrap(),
+                DbError::ExecutionError(ExecutionError::RecordWithKeyNotFound(
+                    Value::String("999").to_string(),
+                    "users".into()
+                ))
+            );
+            let table = db.tables.get("users").unwrap();
+            assert_eq!(table.records.len(), 3);
+        }
     }
 }
 
-#[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-mod select_where_clause_tests {
-    use super::*;
-    use tests::sample_string_db_from_string;
-
-    fn execute_select_with_where<'a: 'b, 'b>(
-        db: &'a Database<String>,
-        where_clause: Where<&'b str>,
-    ) -> SelectResult<&'b str, &'a str> {
-        let select_query = SelectQuery {
-            table: "users",
-            fields: SelectFields::Fields(vec!["name", "surname", "age"]),
-            where_clause: Some(where_clause),
-            limit: None,
-            order_by: None,
-        };
-        let mut select_command = SelectCommand {
-            table: db.tables.get("users").unwrap(),
-            query: select_query,
-        };
-        let result = select_command.execute();
-        assert!(result.is_ok());
-
-        if let Ok(CommandResult::Select(select_result)) = result {
-            select_result
-        } else {
-            panic!("Expected a SelectResult");
-        }
-    }
-
-    #[test]
-    fn test_select_where_age_greater_than() {
-        let db = sample_string_db_from_string();
-        let where_clause = Where {
-            field: "age",
-            op: Op::Greater,
-            value: Value::Int(30),
-        };
-
-        let select_result = execute_select_with_where(&db, where_clause);
-
-        assert_eq!(select_result.records.len(), 2);
-        assert!(
-            select_result
-                .records
-                .iter()
-                .all(|r| r.values[2] > Value::Int(30))
-        );
-    }
-
-    #[test]
-    fn test_select_where_surname_equals() {
-        let db = sample_string_db_from_string();
-        let where_clause = Where {
-            field: "surname",
-            op: Op::Eq,
-            value: Value::String("Nowak"),
-        };
-
-        let select_result = execute_select_with_where(&db, where_clause);
-
-        assert_eq!(select_result.records.len(), 1);
-        let record = &select_result.records[0];
-        assert_eq!(record.values[1], Value::String("Nowak"));
-    }
-}

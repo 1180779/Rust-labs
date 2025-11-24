@@ -419,272 +419,297 @@ pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed<'_>, ParseError> 
 mod tests {
     use super::*;
 
-    #[test]
-    fn select_all() {
-        let select = "SELECT * FROM table";
-        let expected_result = QueryBorrowed::Select(SelectQuery {
-            table: "table",
-            fields: SelectFields::AllFields(),
-            where_clause: None,
-            limit: None,
-            order_by: None,
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
+    mod create {
+        use super::*;
 
-    #[test]
-    fn select_all_where() {
-        let select = "SELECT * FROM table WHERE avg_rating > 4.5";
-        let expected_result = QueryBorrowed::Select(SelectQuery {
-            table: "table",
-            fields: SelectFields::AllFields(),
-            where_clause: Some(Where {
-                field: "avg_rating",
-                op: Op::Greater,
-                value: Value::Float(4.5),
-            }),
-            limit: None,
-            order_by: None,
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn select_one_field() {
-        let select = "SELECT field1 FROM table";
-        let expected_result = QueryBorrowed::Select(SelectQuery {
-            table: "table",
-            fields: SelectFields::Fields(vec!["field1"]),
-            where_clause: None,
-            limit: None,
-            order_by: None,
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn select_one_field_where() {
-        let select = "SELECT field1 FROM table WHERE id <= 10";
-        let expected_result = QueryBorrowed::Select(SelectQuery {
-            table: "table",
-            fields: SelectFields::Fields(vec!["field1"]),
-            where_clause: Some(Where {
-                field: "id",
-                op: Op::LessEq,
-                value: Value::Int(10),
-            }),
-            limit: None,
-            order_by: None,
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn select_multiple_fields() {
-        let select = "SELECT field1, field2, field3 FROM my_table";
-        let expected_result = QueryBorrowed::Select(SelectQuery {
-            table: "my_table",
-            fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
-            where_clause: None,
-            limit: None,
-            order_by: None,
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn create_single_field() {
-        let create_query = "CREATE users KEY id FIELDS name: STRING";
-        let expected_result = QueryBorrowed::Create(CreateQuery {
-            table: "users",
-            key_field: "id",
-            fields_types: NewFields(vec![NewField {
-                field: "name",
-                field_type: FieldType::String,
-            }]),
-        });
-        let result = parse_query(create_query).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn create_multiple_fields() {
-        let create_query = "CREATE products KEY sku FIELDS name: STRING, price: FLOAT, stock: INT";
-        let expected_result = QueryBorrowed::Create(CreateQuery {
-            table: "products",
-            key_field: "sku",
-            fields_types: NewFields(vec![
-                NewField {
+        #[test]
+        fn create_single_field() {
+            let create_query = "CREATE users KEY id FIELDS name: STRING";
+            let expected_result = QueryBorrowed::Create(CreateQuery {
+                table: "users",
+                key_field: "id",
+                fields_types: NewFields(vec![NewField {
                     field: "name",
                     field_type: FieldType::String,
-                },
-                NewField {
-                    field: "price",
-                    field_type: FieldType::Float,
-                },
-                NewField {
-                    field: "stock",
-                    field_type: FieldType::Int,
-                },
-            ]),
-        });
-        let result = parse_query(create_query).unwrap();
-        assert_eq!(result, expected_result);
+                }]),
+            });
+            let result = parse_query(create_query).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn create_multiple_fields() {
+            let create_query =
+                "CREATE products KEY sku FIELDS name: STRING, price: FLOAT, stock: INT";
+            let expected_result = QueryBorrowed::Create(CreateQuery {
+                table: "products",
+                key_field: "sku",
+                fields_types: NewFields(vec![
+                    NewField {
+                        field: "name",
+                        field_type: FieldType::String,
+                    },
+                    NewField {
+                        field: "price",
+                        field_type: FieldType::Float,
+                    },
+                    NewField {
+                        field: "stock",
+                        field_type: FieldType::Int,
+                    },
+                ]),
+            });
+            let result = parse_query(create_query).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn parse_fail_create_incomplete() {
+            let bad_query = "CREATE users KEY";
+            let result = parse_query(bad_query);
+            assert!(
+                result.is_err(),
+                "Expected parsing to fail for incomplete query"
+            );
+        }
     }
 
-    #[test]
-    fn insert_all_types() {
-        let insert_query =
-            "INSERT name = 'test_user', age = 30, active = TRUE, score = 99.5 INTO users";
-        let expected_result = Query::Insert(InsertQuery {
-            table: "users",
-            insert_values: vec![
-                InsertValue {
-                    field: "name",
-                    value: Value::String("test_user"),
-                },
-                InsertValue {
-                    field: "age",
-                    value: Value::Int(30),
-                },
-                InsertValue {
-                    field: "active",
-                    value: Value::Bool(true),
-                },
-                InsertValue {
-                    field: "score",
-                    value: Value::Float(99.5),
-                },
-            ],
-        });
-        let result = parse_query(insert_query);
-        assert_eq!(result.unwrap(), expected_result);
+    mod select {
+        use super::*;
+
+        #[test]
+        fn select_all() {
+            let select = "SELECT * FROM table";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "table",
+                fields: SelectFields::AllFields(),
+                where_clause: None,
+                limit: None,
+                order_by: None,
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn select_one_field() {
+            let select = "SELECT field1 FROM table";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "table",
+                fields: SelectFields::Fields(vec!["field1"]),
+                where_clause: None,
+                limit: None,
+                order_by: None,
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn select_multiple_fields() {
+            let select = "SELECT field1, field2, field3 FROM my_table";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "my_table",
+                fields: SelectFields::Fields(vec!["field1", "field2", "field3"]),
+                where_clause: None,
+                limit: None,
+                order_by: None,
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn parse_fail_select_wrong_keyword() {
+            let bad_query = "SELECT * TO users";
+            let result = parse_query(bad_query);
+            assert!(
+                result.is_err(),
+                "Expected parsing to fail for incorrect keyword"
+            );
+        }
     }
 
-    #[test]
-    fn insert_negative_numbers() {
-        let insert_query = "INSERT temperature = -10.5, balance = -50 INTO readings";
-        let expected_result = Query::Insert(InsertQuery {
-            table: "readings",
-            insert_values: vec![
-                InsertValue {
-                    field: "temperature",
-                    value: Value::Float(-10.5),
-                },
-                InsertValue {
-                    field: "balance",
-                    value: Value::Int(-50),
-                },
-            ],
-        });
-        let result = parse_query(insert_query).unwrap();
-        assert_eq!(result, expected_result);
+    mod select_where {
+        use super::*;
+
+        #[test]
+        fn select_all_where() {
+            let select = "SELECT * FROM table WHERE avg_rating > 4.5";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "table",
+                fields: SelectFields::AllFields(),
+                where_clause: Some(Where {
+                    field: "avg_rating",
+                    op: Op::Greater,
+                    value: Value::Float(4.5),
+                }),
+                limit: None,
+                order_by: None,
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn select_one_field_where() {
+            let select = "SELECT field1 FROM table WHERE id <= 10";
+            let expected_result = QueryBorrowed::Select(SelectQuery {
+                table: "table",
+                fields: SelectFields::Fields(vec!["field1"]),
+                where_clause: Some(Where {
+                    field: "id",
+                    op: Op::LessEq,
+                    value: Value::Int(10),
+                }),
+                limit: None,
+                order_by: None,
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
     }
 
-    #[test]
-    fn delete_string_key() {
-        let delete_query = "DELETE 'user-123-abc' FROM users";
-        let expected_result = Query::Delete(DeleteQuery {
-            key: Value::String("user-123-abc"),
-            table: "users",
-        });
-        let result = parse_query(delete_query).unwrap();
-        assert_eq!(result, expected_result);
+    mod insert {
+        use super::*;
+
+        #[test]
+        fn insert_all_types() {
+            let insert_query =
+                "INSERT name = 'test_user', age = 30, active = TRUE, score = 99.5 INTO users";
+            let expected_result = Query::Insert(InsertQuery {
+                table: "users",
+                insert_values: vec![
+                    InsertValue {
+                        field: "name",
+                        value: Value::String("test_user"),
+                    },
+                    InsertValue {
+                        field: "age",
+                        value: Value::Int(30),
+                    },
+                    InsertValue {
+                        field: "active",
+                        value: Value::Bool(true),
+                    },
+                    InsertValue {
+                        field: "score",
+                        value: Value::Float(99.5),
+                    },
+                ],
+            });
+            let result = parse_query(insert_query);
+            assert_eq!(result.unwrap(), expected_result);
+        }
+
+        #[test]
+        fn insert_negative_numbers() {
+            let insert_query = "INSERT temperature = -10.5, balance = -50 INTO readings";
+            let expected_result = Query::Insert(InsertQuery {
+                table: "readings",
+                insert_values: vec![
+                    InsertValue {
+                        field: "temperature",
+                        value: Value::Float(-10.5),
+                    },
+                    InsertValue {
+                        field: "balance",
+                        value: Value::Int(-50),
+                    },
+                ],
+            });
+            let result = parse_query(insert_query).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn parse_fail_insert_malformed() {
+            let bad_query = "INSERT name = 'test', age: 30 INTO users";
+            let result = parse_query(bad_query);
+            assert!(
+                result.is_err(),
+                "Expected parsing to fail for malformed INSERT"
+            );
+        }
     }
 
-    #[test]
-    fn delete_int_key() {
-        let delete_query = "DELETE 42 FROM products";
-        let expected_result = Query::Delete(DeleteQuery {
-            key: Value::Int(42),
-            table: "products",
-        });
-        let result = parse_query(delete_query).unwrap();
-        assert_eq!(result, expected_result);
+    mod delete {
+        use super::*;
+
+        #[test]
+        fn delete_string_key() {
+            let delete_query = "DELETE 'user-123-abc' FROM users";
+            let expected_result = Query::Delete(DeleteQuery {
+                key: Value::String("user-123-abc"),
+                table: "users",
+            });
+            let result = parse_query(delete_query).unwrap();
+            assert_eq!(result, expected_result);
+        }
+
+        #[test]
+        fn delete_int_key() {
+            let delete_query = "DELETE 42 FROM products";
+            let expected_result = Query::Delete(DeleteQuery {
+                key: Value::Int(42),
+                table: "products",
+            });
+            let result = parse_query(delete_query).unwrap();
+            assert_eq!(result, expected_result);
+        }
     }
 
-    #[test]
-    fn parse_fail_select_wrong_keyword() {
-        let bad_query = "SELECT * TO users";
-        let result = parse_query(bad_query);
-        assert!(
-            result.is_err(),
-            "Expected parsing to fail for incorrect keyword"
-        );
-    }
+    mod save_as_read_from {
+        use super::*;
 
-    #[test]
-    fn parse_fail_create_incomplete() {
-        let bad_query = "CREATE users KEY";
-        let result = parse_query(bad_query);
-        assert!(
-            result.is_err(),
-            "Expected parsing to fail for incomplete query"
-        );
-    }
+        #[test]
+        fn save_as_abs_path_unix() {
+            let select = "SAVE_AS /home/guest/Documents/my_queries";
+            let expected_result = Query::SaveAs(SaveAsQuery {
+                file: "/home/guest/Documents/my_queries",
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
 
-    #[test]
-    fn parse_fail_insert_malformed() {
-        let bad_query = "INSERT name = 'test', age: 30 INTO users";
-        let result = parse_query(bad_query);
-        assert!(
-            result.is_err(),
-            "Expected parsing to fail for malformed INSERT"
-        );
-    }
+        #[test]
+        fn save_as_relative_path_unix() {
+            let select = "SAVE_AS ./Documents/my_queries";
+            let expected_result = Query::SaveAs(SaveAsQuery {
+                file: "./Documents/my_queries",
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
 
-    #[test]
-    fn save_as_abs_path_unix() {
-        let select = "SAVE_AS /home/guest/Documents/my_queries";
-        let expected_result = Query::SaveAs(SaveAsQuery {
-            file: "/home/guest/Documents/my_queries",
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
+        #[test]
+        fn save_as_absolute_path_windows() {
+            let select = "SAVE_AS C:\\Documents\\my_queries.txt";
+            let expected_result = Query::SaveAs(SaveAsQuery {
+                file: "C:\\Documents\\my_queries.txt",
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
 
-    #[test]
-    fn save_as_relative_path_unix() {
-        let select = "SAVE_AS ./Documents/my_queries";
-        let expected_result = Query::SaveAs(SaveAsQuery {
-            file: "./Documents/my_queries",
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
+        #[test]
+        fn save_as_relative_path_windows() {
+            let select = "SAVE_AS .\\Documents\\my_queries\\session_2.txt";
+            let expected_result = Query::SaveAs(SaveAsQuery {
+                file: ".\\Documents\\my_queries\\session_2.txt",
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
 
-    #[test]
-    fn save_as_absolute_path_windows() {
-        let select = "SAVE_AS C:\\Documents\\my_queries.txt";
-        let expected_result = Query::SaveAs(SaveAsQuery {
-            file: "C:\\Documents\\my_queries.txt",
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn save_as_relative_path_windows() {
-        let select = "SAVE_AS .\\Documents\\my_queries\\session_2.txt";
-        let expected_result = Query::SaveAs(SaveAsQuery {
-            file: ".\\Documents\\my_queries\\session_2.txt",
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
-    }
-
-    #[test]
-    fn read_from_relative_path_unix() {
-        let select = "READ_FROM ./Documents/my_queries/session_2";
-        let expected_result = Query::ReadFrom(ReadFromQuery {
-            file: "./Documents/my_queries/session_2",
-        });
-        let result = parse_query(select).unwrap();
-        assert_eq!(result, expected_result);
+        #[test]
+        fn read_from_relative_path_unix() {
+            let select = "READ_FROM ./Documents/my_queries/session_2";
+            let expected_result = Query::ReadFrom(ReadFromQuery {
+                file: "./Documents/my_queries/session_2",
+            });
+            let result = parse_query(select).unwrap();
+            assert_eq!(result, expected_result);
+        }
     }
 }
