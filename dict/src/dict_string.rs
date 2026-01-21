@@ -1,7 +1,8 @@
-use crate::dict_allocator::DictAllocator;
+use crate::dict_allocator::{DictAllocator, DictBox};
 use std::fmt::Display;
 use std::ptr;
 
+#[repr(C)]
 pub struct DictString {
     ptr: *mut u8,
     // Length of string excluding the null terminator
@@ -70,6 +71,18 @@ impl Display for DictString {
     }
 }
 
+impl PartialEq for DictString {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl std::fmt::Debug for DictString {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self.as_str())
+    }
+}
+
 impl Drop for DictString {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
@@ -101,24 +114,23 @@ impl DictString {
             }
 
             let allocator = DictAllocator::new();
-            let str_ptr = allocator.alloc::<DictString>(1);
-            if str_ptr.is_null() {
-                return ptr::null_mut();
-            }
-            ptr::write(str_ptr, DictString::new());
-
             let str_internal_ptr = allocator.alloc::<u8>(len + 1);
             if str_internal_ptr.is_null() {
-                allocator.dealloc(str_ptr);
                 return ptr::null_mut();
             }
 
             ptr::copy_nonoverlapping(src_ptr, str_internal_ptr, len);
             *str_internal_ptr.add(len) = 0;
 
-            (*str_ptr).ptr = str_internal_ptr;
-            (*str_ptr).len = len;
-            str_ptr
+            let Some(dict_box) = DictBox::new(DictString {
+                ptr: str_internal_ptr,
+                len,
+            }) else {
+                allocator.dealloc(str_internal_ptr);
+                return ptr::null_mut();
+            };
+
+            dict_box.into_raw()
         }
     }
 
