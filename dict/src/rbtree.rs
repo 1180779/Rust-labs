@@ -49,16 +49,93 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn minimum(
-        t: &mut RedBlackTree,
-        node: NonNull<RedBlackTreeNode>,
+    unsafe fn minimum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            let mut x = x;
+            while x.as_ref().left != t.nil {
+                x = x.as_ref().left;
+            }
+            x
+        }
+    }
+
+    unsafe fn maximum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            let mut x = x;
+            while x.as_ref().right != t.nil {
+                x = x.as_ref().right;
+            }
+            x
+        }
+    }
+
+    unsafe fn search(
+        t: &RedBlackTree,
+        x: NonNull<RedBlackTreeNode>,
+        key: u64,
     ) -> NonNull<RedBlackTreeNode> {
         unsafe {
-            let mut node = node;
-            while node.as_ref().left != t.nil {
-                node = node.as_ref().left;
+            if x == t.nil || key == x.as_ref().key {
+                return x;
             }
-            node
+            if key < x.as_ref().key {
+                return RedBlackTree::search(t, x.as_ref().left, key);
+            }
+            RedBlackTree::search(t, x.as_ref().right, key)
+        }
+    }
+
+    unsafe fn iterative_search(
+        t: &RedBlackTree,
+        x: NonNull<RedBlackTreeNode>,
+        key: u64,
+    ) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            let mut x = x;
+            while x != t.nil && key != x.as_ref().key {
+                if key < x.as_ref().key {
+                    x = x.as_ref().left;
+                } else {
+                    x = x.as_ref().right;
+                }
+            }
+            x
+        }
+    }
+
+    unsafe fn successor(
+        t: &RedBlackTree,
+        x: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            if x.as_ref().right != t.nil {
+                return RedBlackTree::minimum(t, x.as_ref().right);
+            }
+            let mut x = x;
+            let mut y = x.as_ref().parent;
+            while y != t.nil && x == y.as_ref().right {
+                x = y;
+                y = y.as_ref().parent;
+            }
+            y
+        }
+    }
+
+    unsafe fn predecessor(
+        t: &RedBlackTree,
+        x: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            if x.as_ref().left != t.nil {
+                return RedBlackTree::maximum(t, x.as_ref().left);
+            }
+            let mut x = x;
+            let mut y = x.as_ref().parent;
+            while y != t.nil && x == y.as_ref().left {
+                x = y;
+                y = y.as_ref().parent;
+            }
+            y
         }
     }
 
@@ -208,17 +285,20 @@ impl RedBlackTree {
         mut u: NonNull<RedBlackTreeNode>,
         mut v: NonNull<RedBlackTreeNode>,
     ) {
-        if u.as_ref().parent == t.nil {
-            t.root = v;
-        } else if u == u.as_ref().parent.as_ref().left {
-            u.as_mut().parent.as_mut().left = v;
-        } else {
-            u.as_mut().parent.as_mut().right = v;
+        unsafe {
+            if u.as_ref().parent == t.nil {
+                t.root = v;
+            } else if u == u.as_ref().parent.as_ref().left {
+                u.as_mut().parent.as_mut().left = v;
+            } else {
+                u.as_mut().parent.as_mut().right = v;
+            }
+            v.as_mut().parent = u.as_ref().parent;
+            v.as_mut().parent = u.as_ref().parent;
         }
-        v.as_mut().parent = u.as_ref().parent;
     }
 
-    unsafe fn delete(t: &mut RedBlackTree, mut z: NonNull<RedBlackTreeNode>) {
+    unsafe fn delete(t: &mut RedBlackTree, z: NonNull<RedBlackTreeNode>) {
         unsafe {
             let mut y = z;
             let mut x;
