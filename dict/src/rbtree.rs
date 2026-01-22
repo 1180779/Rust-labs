@@ -25,30 +25,8 @@ pub enum RedBlackTreeNodeColor {
     Black,
 }
 
+// Internal functions
 impl RedBlackTree {
-    /// Creates a new Red-Black Tree with a sentinel (NIL) node.
-    pub fn new() -> Option<RedBlackTree> {
-        unsafe {
-            let nil_node = RedBlackTreeNode {
-                key: 0,
-                value: DictString::new(),
-                left: NonNull::dangling(),
-                right: NonNull::dangling(),
-                parent: NonNull::dangling(),
-                color: RedBlackTreeNodeColor::Black,
-            };
-
-            let nil_ptr = DictBox::new(nil_node);
-            let mut nil = NonNull::new_unchecked(nil_ptr?.into_raw());
-
-            nil.as_mut().left = nil;
-            nil.as_mut().right = nil;
-            nil.as_mut().parent = nil;
-
-            Some(RedBlackTree { root: nil, nil })
-        }
-    }
-
     unsafe fn minimum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut x = x;
@@ -414,6 +392,43 @@ impl RedBlackTree {
             x
         }
     }
+
+    unsafe fn drop_node(t: &mut RedBlackTree, node: NonNull<RedBlackTreeNode>) {
+        if node != t.nil {
+            unsafe {
+                RedBlackTree::drop_node(t, node.as_ref().left);
+                RedBlackTree::drop_node(t, node.as_ref().right);
+            }
+            let allocator = DictAllocator::new();
+            allocator.dealloc(node.as_ptr());
+        }
+    }
+}
+
+// public interface
+impl RedBlackTree {
+    /// Creates a new Red-Black Tree with a sentinel (NIL) node.
+    pub fn new() -> Option<RedBlackTree> {
+        unsafe {
+            let nil_node = RedBlackTreeNode {
+                key: 0,
+                value: DictString::new(),
+                left: NonNull::dangling(),
+                right: NonNull::dangling(),
+                parent: NonNull::dangling(),
+                color: RedBlackTreeNodeColor::Black,
+            };
+
+            let nil_ptr = DictBox::new(nil_node);
+            let mut nil = NonNull::new_unchecked(nil_ptr?.into_raw());
+
+            nil.as_mut().left = nil;
+            nil.as_mut().right = nil;
+            nil.as_mut().parent = nil;
+
+            Some(RedBlackTree { root: nil, nil })
+        }
+    }
 }
 
 impl Drop for RedBlackTree {
@@ -423,19 +438,6 @@ impl Drop for RedBlackTree {
             // Free the sentinel at the end
             let allocator = DictAllocator::new();
             allocator.dealloc(self.nil.as_ptr());
-        }
-    }
-}
-
-impl RedBlackTree {
-    unsafe fn drop_node(t: &mut RedBlackTree, node: NonNull<RedBlackTreeNode>) {
-        if node != t.nil {
-            unsafe {
-                RedBlackTree::drop_node(t, node.as_ref().left);
-                RedBlackTree::drop_node(t, node.as_ref().right);
-            }
-            let allocator = DictAllocator::new();
-            allocator.dealloc(node.as_ptr());
         }
     }
 }
