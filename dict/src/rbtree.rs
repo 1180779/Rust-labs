@@ -49,7 +49,10 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn minimum(t: &mut RedBlackTree, node: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn minimum(
+        t: &mut RedBlackTree,
+        node: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut node = node;
             while node.as_ref().left != t.nil {
@@ -152,7 +155,10 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn insert_fixup_left(t: &mut RedBlackTree, mut z: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn insert_fixup_left(
+        t: &mut RedBlackTree,
+        mut z: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut y = z.as_ref().parent.as_ref().parent.as_ref().right;
             if y.as_ref().color == RedBlackTreeNodeColor::Red {
@@ -173,7 +179,10 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn insert_fixup_right(t: &mut RedBlackTree, mut z: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn insert_fixup_right(
+        t: &mut RedBlackTree,
+        mut z: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut y = z.as_ref().parent.as_ref().parent.as_ref().left;
             if y.as_ref().color == RedBlackTreeNodeColor::Red {
@@ -194,9 +203,13 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn transplant(t: &mut RedBlackTree, mut u: NonNull<RedBlackTreeNode>, mut v: NonNull<RedBlackTreeNode>) {
+    unsafe fn transplant(
+        t: &mut RedBlackTree,
+        mut u: NonNull<RedBlackTreeNode>,
+        mut v: NonNull<RedBlackTreeNode>,
+    ) {
         if u.as_ref().parent == t.nil {
-            t.root = u;
+            t.root = v;
         } else if u == u.as_ref().parent.as_ref().left {
             u.as_mut().parent.as_mut().left = v;
         } else {
@@ -206,7 +219,120 @@ impl RedBlackTree {
     }
 
     unsafe fn delete(t: &mut RedBlackTree, mut z: NonNull<RedBlackTreeNode>) {
-        let mut y = z;
+        unsafe {
+            let mut y = z;
+            let mut x;
+            let mut y_original_color = y.as_ref().color;
+            if z.as_ref().left == t.nil {
+                x = z.as_ref().right;
+                RedBlackTree::transplant(t, z, z.as_ref().right);
+            } else if z.as_ref().right == t.nil {
+                x = z.as_ref().left;
+                RedBlackTree::transplant(t, z, z.as_ref().left);
+            } else {
+                y = RedBlackTree::minimum(t, z.as_ref().right);
+                y_original_color = y.as_ref().color;
+                x = y.as_ref().right;
+                if y.as_ref().parent == z {
+                    x.as_mut().parent = y;
+                } else {
+                    RedBlackTree::transplant(t, y, y.as_ref().right);
+                    y.as_mut().right = z.as_ref().right;
+                    y.as_mut().right.as_mut().parent = y;
+                }
+                RedBlackTree::transplant(t, z, y);
+                y.as_mut().left = z.as_ref().left;
+                y.as_mut().left.as_mut().parent = y;
+                y.as_mut().color = z.as_ref().color;
+            }
+            if y_original_color == RedBlackTreeNodeColor::Black {
+                RedBlackTree::delete_fixup(t, x)
+            }
+
+            let allocator = DictAllocator::new();
+            allocator.dealloc(z.as_ptr());
+        }
+    }
+
+    unsafe fn delete_fixup(t: &mut RedBlackTree, mut x: NonNull<RedBlackTreeNode>) {
+        unsafe {
+            while x != t.root && x.as_ref().color == RedBlackTreeNodeColor::Black {
+                if x == x.as_ref().parent.as_ref().left {
+                    x = RedBlackTree::delete_fixup_left(t, x);
+                } else {
+                    x = RedBlackTree::delete_fixup_right(t, x);
+                }
+            }
+            x.as_mut().color = RedBlackTreeNodeColor::Black;
+        }
+    }
+
+    unsafe fn delete_fixup_left(
+        t: &mut RedBlackTree,
+        mut x: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            let mut w = x.as_ref().parent.as_ref().right;
+            if w.as_ref().color == RedBlackTreeNodeColor::Red {
+                w.as_mut().color = RedBlackTreeNodeColor::Black;
+                x.as_mut().parent.as_mut().color = RedBlackTreeNodeColor::Red;
+                RedBlackTree::rotate_left(t, x.as_ref().parent);
+                w = x.as_ref().parent.as_ref().right;
+            }
+            if w.as_ref().left.as_ref().color == RedBlackTreeNodeColor::Black
+                && w.as_ref().right.as_ref().color == RedBlackTreeNodeColor::Black
+            {
+                w.as_mut().color = RedBlackTreeNodeColor::Red;
+                x = x.as_ref().parent;
+            } else {
+                if w.as_ref().right.as_ref().color == RedBlackTreeNodeColor::Black {
+                    w.as_mut().left.as_mut().color = RedBlackTreeNodeColor::Black;
+                    w.as_mut().color = RedBlackTreeNodeColor::Red;
+                    RedBlackTree::rotate_right(t, w);
+                    w = x.as_ref().parent.as_ref().right;
+                }
+                w.as_mut().color = x.as_ref().parent.as_ref().color;
+                x.as_mut().parent.as_mut().color = RedBlackTreeNodeColor::Black;
+                w.as_mut().right.as_mut().color = RedBlackTreeNodeColor::Black;
+                RedBlackTree::rotate_left(t, x.as_ref().parent);
+                x = t.root;
+            }
+            x
+        }
+    }
+
+    unsafe fn delete_fixup_right(
+        t: &mut RedBlackTree,
+        mut x: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
+        unsafe {
+            let mut w = x.as_ref().parent.as_ref().left;
+            if w.as_ref().color == RedBlackTreeNodeColor::Red {
+                w.as_mut().color = RedBlackTreeNodeColor::Black;
+                x.as_mut().parent.as_mut().color = RedBlackTreeNodeColor::Red;
+                RedBlackTree::rotate_right(t, x.as_ref().parent);
+                w = x.as_ref().parent.as_ref().left;
+            }
+            if w.as_ref().right.as_ref().color == RedBlackTreeNodeColor::Black
+                && w.as_ref().left.as_ref().color == RedBlackTreeNodeColor::Black
+            {
+                w.as_mut().color = RedBlackTreeNodeColor::Red;
+                x = x.as_ref().parent;
+            } else {
+                if w.as_ref().left.as_ref().color == RedBlackTreeNodeColor::Black {
+                    w.as_mut().right.as_mut().color = RedBlackTreeNodeColor::Black;
+                    w.as_mut().color = RedBlackTreeNodeColor::Red;
+                    RedBlackTree::rotate_left(t, w);
+                    w = x.as_ref().parent.as_ref().left;
+                }
+                w.as_mut().color = x.as_ref().parent.as_ref().color;
+                x.as_mut().parent.as_mut().color = RedBlackTreeNodeColor::Black;
+                w.as_mut().left.as_mut().color = RedBlackTreeNodeColor::Black;
+                RedBlackTree::rotate_right(t, x.as_ref().parent);
+                x = t.root;
+            }
+            x
+        }
     }
 }
 
