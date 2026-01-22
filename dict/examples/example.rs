@@ -1,23 +1,29 @@
-use dict::RedBlackTree;
+use dict::{rbt, RedBlackTree};
 
 fn main() {
     println!("=== Red-Black Tree Dictionary Example (Rust) ===");
 
     println!("\nCreating dictionary");
-    let d = RedBlackTree::new();
+    let d = rbt! {
+        2 => "two",
+        4 => "four",
+        6 => "six",
+        12 => "twelve",
+    };
     let Some(mut d) = d else {
         println!("Dictionary creation failed. Exiting");
         return;
     };
+    println!("Created with keys: 2, 4, 6, 12");
 
-    d.insert(1, "a".into());
-    d.insert(12, "ab".into());
+    d.insert(54, "a".into());
+    d.insert(542, "ab".into());
     d.insert(123, "abc".into());
     d.insert(1234, "abcd".into());
     println!("Inserted keys: 1, 12, 123, 1234");
 
     println!("\nChecking if keys exist:");
-    let keys_to_check = [1, 12, 123, 1234, 2, 5, 56, 79, 1239];
+    let keys_to_check = [2, 4, 6, 12, 54, 542, 1, 12, 123, 1234, 2, 5, 56, 79, 1239];
     for key in keys_to_check {
         println!("\tContains key {:5} {}", key,  d.contains(key));
     }

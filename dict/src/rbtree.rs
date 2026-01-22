@@ -27,7 +27,10 @@ pub enum RedBlackTreeNodeColor {
 
 // Internal functions
 impl RedBlackTree {
-    unsafe fn internal_minimum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn internal_minimum(
+        t: &RedBlackTree,
+        x: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut x = x;
             while x.as_ref().left != t.nil {
@@ -37,7 +40,10 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn internal_maximum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn internal_maximum(
+        t: &RedBlackTree,
+        x: NonNull<RedBlackTreeNode>,
+    ) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut x = x;
             while x.as_ref().right != t.nil {
@@ -297,17 +303,7 @@ impl RedBlackTree {
                 y = RedBlackTree::internal_minimum(t, z.as_ref().right);
                 y_original_color = y.as_ref().color;
                 x = y.as_ref().right;
-                if y.as_ref().parent == z {
-                    x.as_mut().parent = y;
-                } else {
-                    RedBlackTree::transplant(t, y, y.as_ref().right);
-                    y.as_mut().right = z.as_ref().right;
-                    y.as_mut().right.as_mut().parent = y;
-                }
-                RedBlackTree::transplant(t, z, y);
-                y.as_mut().left = z.as_ref().left;
-                y.as_mut().left.as_mut().parent = y;
-                y.as_mut().color = z.as_ref().color;
+                Self::delete_two_children_case(t, z, y, &mut x);
             }
             if y_original_color == RedBlackTreeNodeColor::Black {
                 RedBlackTree::delete_fixup(t, x)
@@ -315,6 +311,27 @@ impl RedBlackTree {
 
             let allocator = DictAllocator::new();
             allocator.dealloc(z.as_ptr());
+        }
+    }
+
+    unsafe fn delete_two_children_case(
+        t: &mut RedBlackTree,
+        z: NonNull<RedBlackTreeNode>,
+        mut y: NonNull<RedBlackTreeNode>,
+        x: &mut NonNull<RedBlackTreeNode>,
+    ) {
+        unsafe {
+            if y.as_ref().parent == z {
+                x.as_mut().parent = y;
+            } else {
+                RedBlackTree::transplant(t, y, y.as_ref().right);
+                y.as_mut().right = z.as_ref().right;
+                y.as_mut().right.as_mut().parent = y;
+            }
+            RedBlackTree::transplant(t, z, y);
+            y.as_mut().left = z.as_ref().left;
+            y.as_mut().left.as_mut().parent = y;
+            y.as_mut().color = z.as_ref().color;
         }
     }
 
