@@ -515,6 +515,21 @@ impl RedBlackTree {
     }
 }
 
+#[macro_export]
+macro_rules! rbt {
+    ( $( $key:expr => $val:expr ),* $(,)? ) => {
+        {
+            let mut tree_opt = RedBlackTree::new();
+            if let Some(tree) = &mut tree_opt {
+                $(
+                let _ = tree.insert($key, $val.into());
+                )*
+            }
+            tree_opt
+        }
+    };
+}
+
 impl Drop for RedBlackTree {
     fn drop(&mut self) {
         unsafe {
