@@ -1,5 +1,4 @@
 use std::{mem, ptr};
-use std::ptr::NonNull;
 
 pub(crate) struct DictAllocator {}
 
@@ -53,10 +52,6 @@ impl<T> DictBox<T> {
         let ptr = self.ptr.as_ptr();
         mem::forget(self);
         ptr
-    }
-    
-    pub(crate) fn get(&self) -> NonNull<T> {
-        self.ptr
     }
 }
 

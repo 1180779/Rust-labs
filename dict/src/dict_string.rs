@@ -83,6 +83,12 @@ impl std::fmt::Debug for DictString {
     }
 }
 
+impl From<&str> for DictString {
+    fn from(str: &str) -> Self {
+        DictString::from_ascii(str).unwrap_or_default()
+    }
+}
+
 impl Drop for DictString {
     fn drop(&mut self) {
         if !self.ptr.is_null() {
@@ -105,59 +111,59 @@ impl DictString {
             true
         }
     }
+}
 
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn dict_string_from_raw(src_ptr: *mut u8, len: usize) -> *mut DictString {
-        unsafe {
-            if !Self::validate_raw_input(src_ptr, len) {
-                return ptr::null_mut();
-            }
-
-            let allocator = DictAllocator::new();
-            let str_internal_ptr = allocator.alloc::<u8>(len + 1);
-            if str_internal_ptr.is_null() {
-                return ptr::null_mut();
-            }
-
-            ptr::copy_nonoverlapping(src_ptr, str_internal_ptr, len);
-            *str_internal_ptr.add(len) = 0;
-
-            let Some(dict_box) = DictBox::new(DictString {
-                ptr: str_internal_ptr,
-                len,
-            }) else {
-                allocator.dealloc(str_internal_ptr);
-                return ptr::null_mut();
-            };
-
-            dict_box.into_raw()
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dict_string_from_raw(src_ptr: *mut u8, len: usize) -> *mut DictString {
+    unsafe {
+        if !DictString::validate_raw_input(src_ptr, len) {
+            return ptr::null_mut();
         }
+
+        let allocator = DictAllocator::new();
+        let str_internal_ptr = allocator.alloc::<u8>(len + 1);
+        if str_internal_ptr.is_null() {
+            return ptr::null_mut();
+        }
+
+        ptr::copy_nonoverlapping(src_ptr, str_internal_ptr, len);
+        *str_internal_ptr.add(len) = 0;
+
+        let Some(dict_box) = DictBox::new(DictString {
+            ptr: str_internal_ptr,
+            len,
+        }) else {
+            allocator.dealloc(str_internal_ptr);
+            return ptr::null_mut();
+        };
+
+        dict_box.into_raw()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dict_string_str_ptr(s: *const DictString) -> *const libc::c_char {
+    if s.is_null() {
+        return ptr::null();
     }
 
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn dict_string_str_ptr(s: *const DictString) -> *const libc::c_char {
-        if s.is_null() {
-            return ptr::null();
-        }
+    unsafe { (*s).ptr as *const libc::c_char }
+}
 
-        unsafe { (*s).ptr as *const libc::c_char }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dict_string_len(s: *const DictString) -> libc::size_t {
+    if s.is_null() {
+        return 0;
     }
 
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn dict_string_len(s: *const DictString) -> libc::size_t {
-        if s.is_null() {
-            return 0;
-        }
+    unsafe { (*s).len }
+}
 
-        unsafe { (*s).len }
-    }
-
-    #[unsafe(no_mangle)]
-    pub unsafe extern "C" fn dict_string_free(s: *mut DictString) {
-        if !s.is_null() {
-            let allocator = DictAllocator::new();
-            allocator.dealloc(s);
-        }
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn dict_string_free(s: *mut DictString) {
+    if !s.is_null() {
+        let allocator = DictAllocator::new();
+        allocator.dealloc(s);
     }
 }
 

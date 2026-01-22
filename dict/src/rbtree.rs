@@ -27,7 +27,7 @@ pub enum RedBlackTreeNodeColor {
 
 // Internal functions
 impl RedBlackTree {
-    unsafe fn minimum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn internal_minimum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut x = x;
             while x.as_ref().left != t.nil {
@@ -37,7 +37,7 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn maximum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
+    unsafe fn internal_maximum(t: &RedBlackTree, x: NonNull<RedBlackTreeNode>) -> NonNull<RedBlackTreeNode> {
         unsafe {
             let mut x = x;
             while x.as_ref().right != t.nil {
@@ -47,23 +47,23 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn search(
-        t: &RedBlackTree,
-        x: NonNull<RedBlackTreeNode>,
-        key: u64,
-    ) -> NonNull<RedBlackTreeNode> {
-        unsafe {
-            if x == t.nil || key == x.as_ref().key {
-                return x;
-            }
-            if key < x.as_ref().key {
-                return RedBlackTree::search(t, x.as_ref().left, key);
-            }
-            RedBlackTree::search(t, x.as_ref().right, key)
-        }
-    }
+    // unsafe fn internal_search(
+    //     t: &RedBlackTree,
+    //     x: NonNull<RedBlackTreeNode>,
+    //     key: u64,
+    // ) -> NonNull<RedBlackTreeNode> {
+    //     unsafe {
+    //         if x == t.nil || key == x.as_ref().key {
+    //             return x;
+    //         }
+    //         if key < x.as_ref().key {
+    //             return RedBlackTree::internal_search(t, x.as_ref().left, key);
+    //         }
+    //         RedBlackTree::internal_search(t, x.as_ref().right, key)
+    //     }
+    // }
 
-    unsafe fn iterative_search(
+    unsafe fn internal_iterative_search(
         t: &RedBlackTree,
         x: NonNull<RedBlackTreeNode>,
         key: u64,
@@ -81,41 +81,41 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn successor(
-        t: &RedBlackTree,
-        x: NonNull<RedBlackTreeNode>,
-    ) -> NonNull<RedBlackTreeNode> {
-        unsafe {
-            if x.as_ref().right != t.nil {
-                return RedBlackTree::minimum(t, x.as_ref().right);
-            }
-            let mut x = x;
-            let mut y = x.as_ref().parent;
-            while y != t.nil && x == y.as_ref().right {
-                x = y;
-                y = y.as_ref().parent;
-            }
-            y
-        }
-    }
-
-    unsafe fn predecessor(
-        t: &RedBlackTree,
-        x: NonNull<RedBlackTreeNode>,
-    ) -> NonNull<RedBlackTreeNode> {
-        unsafe {
-            if x.as_ref().left != t.nil {
-                return RedBlackTree::maximum(t, x.as_ref().left);
-            }
-            let mut x = x;
-            let mut y = x.as_ref().parent;
-            while y != t.nil && x == y.as_ref().left {
-                x = y;
-                y = y.as_ref().parent;
-            }
-            y
-        }
-    }
+    // unsafe fn internal_successor(
+    //     t: &RedBlackTree,
+    //     x: NonNull<RedBlackTreeNode>,
+    // ) -> NonNull<RedBlackTreeNode> {
+    //     unsafe {
+    //         if x.as_ref().right != t.nil {
+    //             return RedBlackTree::internal_minimum(t, x.as_ref().right);
+    //         }
+    //         let mut x = x;
+    //         let mut y = x.as_ref().parent;
+    //         while y != t.nil && x == y.as_ref().right {
+    //             x = y;
+    //             y = y.as_ref().parent;
+    //         }
+    //         y
+    //     }
+    // }
+    //
+    // unsafe fn internal_predecessor(
+    //     t: &RedBlackTree,
+    //     x: NonNull<RedBlackTreeNode>,
+    // ) -> NonNull<RedBlackTreeNode> {
+    //     unsafe {
+    //         if x.as_ref().left != t.nil {
+    //             return RedBlackTree::internal_maximum(t, x.as_ref().left);
+    //         }
+    //         let mut x = x;
+    //         let mut y = x.as_ref().parent;
+    //         while y != t.nil && x == y.as_ref().left {
+    //             x = y;
+    //             y = y.as_ref().parent;
+    //         }
+    //         y
+    //     }
+    // }
 
     /// Rotates the tree left around node `x`.
     /// Assumes `x.right` is not NIL.
@@ -155,6 +155,12 @@ impl RedBlackTree {
 
             // Turn x's right subtree into y's right subtree
             y.as_mut().left = x.as_ref().right;
+            if x.as_ref().right != t.nil {
+                x.as_mut().right.as_mut().parent = y;
+            }
+
+            // Link y's parent to x
+            x.as_mut().parent = y.as_ref().parent;
             if y.as_ref().parent == t.nil {
                 t.root = x;
             } else if y == y.as_ref().parent.as_ref().right {
@@ -169,7 +175,7 @@ impl RedBlackTree {
         }
     }
 
-    unsafe fn insert(t: &mut RedBlackTree, mut z: NonNull<RedBlackTreeNode>) {
+    unsafe fn internal_insert(t: &mut RedBlackTree, mut z: NonNull<RedBlackTreeNode>) {
         unsafe {
             let mut y = t.nil;
             let mut x = t.root;
@@ -183,7 +189,7 @@ impl RedBlackTree {
                 }
             }
             z.as_mut().parent = y;
-            if y.as_ref().parent == t.nil {
+            if y == t.nil {
                 t.root = z;
             } else if z.as_ref().key < y.as_ref().key {
                 y.as_mut().left = z;
@@ -288,7 +294,7 @@ impl RedBlackTree {
                 x = z.as_ref().left;
                 RedBlackTree::transplant(t, z, z.as_ref().left);
             } else {
-                y = RedBlackTree::minimum(t, z.as_ref().right);
+                y = RedBlackTree::internal_minimum(t, z.as_ref().right);
                 y_original_color = y.as_ref().color;
                 x = y.as_ref().right;
                 if y.as_ref().parent == z {
@@ -405,9 +411,8 @@ impl RedBlackTree {
     }
 }
 
-// public interface
+// Rust Public Interface
 impl RedBlackTree {
-    /// Creates a new Red-Black Tree with a sentinel (NIL) node.
     pub fn new() -> Option<RedBlackTree> {
         unsafe {
             let nil_node = RedBlackTreeNode {
@@ -429,6 +434,85 @@ impl RedBlackTree {
             Some(RedBlackTree { root: nil, nil })
         }
     }
+
+    pub fn insert(&mut self, key: u64, value: DictString) -> bool {
+        unsafe {
+            let mut node = RedBlackTree::internal_iterative_search(self, self.root, key);
+            if node != self.nil {
+                node.as_mut().value = value;
+                true
+            } else {
+                let new_node = RedBlackTreeNode {
+                    key,
+                    value,
+                    left: self.nil,
+                    right: self.nil,
+                    parent: self.nil,
+                    color: RedBlackTreeNodeColor::Red,
+                };
+
+                if let Some(boxed) = DictBox::new(new_node) {
+                    let ptr = NonNull::new_unchecked(boxed.into_raw());
+                    RedBlackTree::internal_insert(self, ptr);
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    pub fn find(&self, key: u64) -> Option<&DictString> {
+        unsafe {
+            let node = RedBlackTree::internal_iterative_search(self, self.root, key);
+            if node != self.nil {
+                Some(&node.as_ref().value)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn minimum(&self) -> Option<&DictString> {
+        unsafe {
+            let node = RedBlackTree::internal_minimum(self, self.root);
+            if node != self.nil {
+                Some(&node.as_ref().value)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn maximum(&self) -> Option<&DictString> {
+        unsafe {
+            let node = RedBlackTree::internal_maximum(self, self.root);
+            if node != self.nil {
+                Some(&node.as_ref().value)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn contains(&self, key: u64) -> bool {
+        unsafe {
+            let node = RedBlackTree::internal_iterative_search(self, self.root, key);
+            node != self.nil
+        }
+    }
+
+    pub fn remove(&mut self, key: u64) -> bool {
+        unsafe {
+            let node = RedBlackTree::internal_iterative_search(self, self.root, key);
+            if node != self.nil {
+                RedBlackTree::delete(self, node);
+                true
+            } else {
+                false
+            }
+        }
+    }
 }
 
 impl Drop for RedBlackTree {
@@ -439,5 +523,120 @@ impl Drop for RedBlackTree {
             let allocator = DictAllocator::new();
             allocator.dealloc(self.nil.as_ptr());
         }
+    }
+}
+
+// C Public Interface
+#[unsafe(no_mangle)]
+pub extern "C" fn rbt_new() -> *mut RedBlackTree {
+    match RedBlackTree::new() {
+        Some(tree) => {
+            if let Some(boxed) = DictBox::new(tree) {
+                boxed.into_raw()
+            } else {
+                std::ptr::null_mut()
+            }
+        }
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rbt_free(ptr: *mut RedBlackTree) {
+    if !ptr.is_null() {
+        let allocator = DictAllocator::new();
+        allocator.dealloc(ptr);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rbt_insert(
+    ptr: *mut RedBlackTree,
+    key: u64,
+    value: *const libc::c_char,
+) -> bool {
+    unsafe {
+        if ptr.is_null() || value.is_null() {
+            return false;
+        }
+
+        let tree = &mut *ptr;
+        let c_str = std::ffi::CStr::from_ptr(value);
+        let bytes = c_str.to_bytes();
+
+        if let Some(ds) = DictString::from(bytes) {
+            tree.insert(key, ds)
+        } else {
+            false
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rbt_find(ptr: *const RedBlackTree, key: u64) -> *const libc::c_char {
+    unsafe {
+        if ptr.is_null() {
+            return std::ptr::null();
+        }
+
+        let tree = &*ptr;
+        match tree.find(key) {
+            Some(ds) => ds.as_str().as_ptr() as *const libc::c_char,
+            None => std::ptr::null(),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rbt_contains(ptr: *const RedBlackTree, key: u64) -> bool {
+    unsafe {
+        if ptr.is_null() {
+            return false;
+        }
+
+        let tree = &*ptr;
+        tree.find(key).is_some()
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rbt_minimum(ptr: *const RedBlackTree) -> *const libc::c_char {
+    unsafe {
+        if ptr.is_null() {
+            return std::ptr::null();
+        }
+
+        let tree = &*ptr;
+        match tree.minimum() {
+            Some(ds) => ds.as_str().as_ptr() as *const libc::c_char,
+            None => std::ptr::null(),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rbt_maximum(ptr: *const RedBlackTree) -> *const libc::c_char {
+    unsafe {
+        if ptr.is_null() {
+            return std::ptr::null();
+        }
+
+        let tree = &*ptr;
+        match tree.maximum() {
+            Some(ds) => ds.as_str().as_ptr() as *const libc::c_char,
+            None => std::ptr::null(),
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rbt_remove(ptr: *mut RedBlackTree, key: u64) -> bool {
+    unsafe {
+        if ptr.is_null() {
+            return false;
+        }
+
+        let tree = &mut *ptr;
+        tree.remove(key)
     }
 }
