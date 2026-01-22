@@ -113,6 +113,10 @@ impl DictString {
     }
 }
 
+/// # Safety
+/// - [src_ptr] must point to a valid, readable memory region of at least [len] bytes.
+/// - Proper cleanup of the returned [DictString] is the caller's responsibility.
+///   The ownership of the allocated memory is transferred to the caller.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dict_string_from_raw(src_ptr: *mut u8, len: usize) -> *mut DictString {
     unsafe {
@@ -141,6 +145,8 @@ pub unsafe extern "C" fn dict_string_from_raw(src_ptr: *mut u8, len: usize) -> *
     }
 }
 
+/// # Safety
+/// The [s] must be NULL or point to a valid [DictString]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dict_string_str_ptr(s: *const DictString) -> *const libc::c_char {
     if s.is_null() {
@@ -150,6 +156,8 @@ pub unsafe extern "C" fn dict_string_str_ptr(s: *const DictString) -> *const lib
     unsafe { (*s).ptr as *const libc::c_char }
 }
 
+/// # Safety
+/// The [s] must be NULL or point to a valid [DictString]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dict_string_len(s: *const DictString) -> libc::size_t {
     if s.is_null() {
@@ -159,6 +167,9 @@ pub unsafe extern "C" fn dict_string_len(s: *const DictString) -> libc::size_t {
     unsafe { (*s).len }
 }
 
+/// # Safety
+/// The [s] must be NULL or point to a valid [DictString].
+/// The [s] will be freed and must not be used by the caller from this point on.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn dict_string_free(s: *mut DictString) {
     if !s.is_null() {

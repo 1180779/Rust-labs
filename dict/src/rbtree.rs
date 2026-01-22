@@ -581,6 +581,8 @@ pub extern "C" fn rbt_free(ptr: *mut RedBlackTree) {
     }
 }
 
+/// # Safety
+/// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rbt_insert(
     ptr: *mut RedBlackTree,
@@ -604,6 +606,8 @@ pub unsafe extern "C" fn rbt_insert(
     }
 }
 
+/// # Safety
+/// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rbt_find(ptr: *const RedBlackTree, key: u64) -> *const libc::c_char {
     unsafe {
@@ -619,6 +623,8 @@ pub unsafe extern "C" fn rbt_find(ptr: *const RedBlackTree, key: u64) -> *const 
     }
 }
 
+/// # Safety
+/// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rbt_contains(ptr: *const RedBlackTree, key: u64) -> bool {
     unsafe {
@@ -631,6 +637,8 @@ pub unsafe extern "C" fn rbt_contains(ptr: *const RedBlackTree, key: u64) -> boo
     }
 }
 
+/// # Safety
+/// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rbt_minimum(ptr: *const RedBlackTree) -> *const libc::c_char {
     unsafe {
@@ -646,6 +654,8 @@ pub unsafe extern "C" fn rbt_minimum(ptr: *const RedBlackTree) -> *const libc::c
     }
 }
 
+/// # Safety
+/// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rbt_maximum(ptr: *const RedBlackTree) -> *const libc::c_char {
     unsafe {
@@ -661,6 +671,8 @@ pub unsafe extern "C" fn rbt_maximum(ptr: *const RedBlackTree) -> *const libc::c
     }
 }
 
+/// # Safety
+/// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rbt_remove(ptr: *mut RedBlackTree, key: u64) -> bool {
     unsafe {
