@@ -626,14 +626,14 @@ pub unsafe extern "C" fn rbt_find(ptr: *const RedBlackTree, key: u64) -> *const 
 /// # Safety
 /// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rbt_contains(ptr: *const RedBlackTree, key: u64) -> bool {
+pub unsafe extern "C" fn rbt_contains(ptr: *const RedBlackTree, key: u64) -> libc::c_int {
     unsafe {
         if ptr.is_null() {
-            return false;
+            return false.into();
         }
 
         let tree = &*ptr;
-        tree.find(key).is_some()
+        tree.find(key).is_some().into()
     }
 }
 
@@ -674,13 +674,13 @@ pub unsafe extern "C" fn rbt_maximum(ptr: *const RedBlackTree) -> *const libc::c
 /// # Safety
 /// The [ptr] must be NULL or point to a valid [RedBlackTree]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rbt_remove(ptr: *mut RedBlackTree, key: u64) -> bool {
+pub unsafe extern "C" fn rbt_remove(ptr: *mut RedBlackTree, key: u64) -> libc::c_int {
     unsafe {
         if ptr.is_null() {
-            return false;
+            return false.into();
         }
 
         let tree = &mut *ptr;
-        tree.remove(key)
+        tree.remove(key).into()
     }
 }

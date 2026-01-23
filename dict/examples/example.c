@@ -1,15 +1,14 @@
 #include <stdio.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 typedef struct RedBlackTree RedBlackTree;
 
 extern RedBlackTree* rbt_new();
 extern void rbt_free(RedBlackTree* tree);
-extern bool rbt_insert(RedBlackTree* tree, uint64_t key, const char* value);
+extern int rbt_insert(RedBlackTree* tree, uint64_t key, const char* value);
 extern const char* rbt_find(const RedBlackTree* tree, uint64_t key);
-extern bool rbt_contains(const RedBlackTree* tree, uint64_t key);
-extern bool rbt_remove(RedBlackTree* tree, uint64_t key);
+extern int rbt_contains(const RedBlackTree* tree, uint64_t key);
+extern int rbt_remove(RedBlackTree* tree, uint64_t key);
 extern const char* rbt_minimum(const RedBlackTree* tree);
 extern const char* rbt_maximum(const RedBlackTree* tree);
 
@@ -35,7 +34,7 @@ int main() {
 
     for (size_t i = 0; i < num_keys; ++i) {
         const uint64_t key = keys_to_check[i];
-        const bool exists = rbt_contains(d, key);
+        const int exists = rbt_contains(d, key);
         printf("\tContains key %5lu %s\n", key, exists ? "true" : "false");
     }
 
@@ -69,7 +68,7 @@ int main() {
     printf("\nDeleting keys\n");
     for (size_t i = 0; i < num_keys; ++i) {
         const uint64_t key = keys_to_check[i];
-        const bool removed = rbt_remove(d, key);
+        const int removed = rbt_remove(d, key);
         if (removed) {
             printf("\t%-15s %5lu\n", "Removed value", key);
         } else {
