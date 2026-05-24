@@ -405,6 +405,8 @@ fn parse_query_rf<'a, K: ParsableStrType<'a, K>>(
 ///
 /// # Example
 /// ```rust
+/// use memoria::parser::parse_query;
+///
 /// let query = "SELECT * FROM users WHERE age > 30";
 /// match parse_query(query) {
 ///     Ok(parsed_query) => {
@@ -418,7 +420,7 @@ fn parse_query_rf<'a, K: ParsableStrType<'a, K>>(
 /// }
 /// ```
 ///
-pub(crate) fn parse_query(query: &str) -> Result<QueryBorrowed<'_>, ParseError> {
+pub fn parse_query(query: &str) -> Result<QueryBorrowed<'_>, ParseError> {
     let mut pairs = GrammaParser::parse(Rule::Q, query).map_err(Box::new)?;
 
     let query_pair = pairs
