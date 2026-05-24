@@ -1,4 +1,4 @@
-# Projekt Memoria (l_6)
+# Projekt Memoria
 
 ## Opis
 
@@ -19,6 +19,9 @@ Struktura projektu (w zakresie plików) jest następująca:
 │   ├── main.rs
 │   ├── parser.rs
 │   └── query.rs
+├── test
+│   ├── hott.txt
+│   └── hott_more.txt
 ├── ADDITIONS
 ├── Cargo.lock
 ├── Cargo.toml
